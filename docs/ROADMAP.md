@@ -61,8 +61,9 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
       *(Built and unit-tested; the real-order test is still to do once logged in.)*
 - [ ] **13. Order updates (websocket).** Upstox portfolio stream for live order and position
       updates, with reconnect.
-- [ ] **14. Adapter complete.** `UpstoxBroker` and `UpstoxMarketData` implement the core
+- [x] **14. Adapter complete.** `UpstoxBroker` and `UpstoxMarketData` implement the core
       interfaces. Contract tests any future broker adapter must also pass.
+      *(Order updates poll the order book every second until step 13 adds the websocket.)*
 
 ## Phase 3: Trading core
 

@@ -1,15 +1,6 @@
 // Broker-agnostic domain types. Brokers, strategies and the engine depend only on these.
 
-export type Exchange = "NSE" | "BSE" | "NFO" | "BFO" | "MCX" | "CDS";
-
-/** Intraday (MIS), delivery (CNC) or carry-forward F&O (NRML). */
-export type Product = "MIS" | "CNC" | "NRML";
-
-export type Side = "BUY" | "SELL";
-export type OrderType = "MARKET" | "LIMIT" | "SL" | "SL-M";
-export type OrderStatus = "PENDING" | "OPEN" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "REJECTED";
-export type Timeframe = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "1d";
-export type RunMode = "backtest" | "paper" | "live";
+// ---------- Instruments ----------
 
 export type InstrumentKind = "index" | "equity" | "future" | "option";
 export type OptionType = "CE" | "PE";
@@ -68,102 +59,185 @@ export interface InstrumentLookup {
   findFuture(underlying: string, expiry?: string): Instrument | undefined;
 }
 
+// ---------- Market data ----------
+
+export type Timeframe = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "1d";
+
 export interface Candle {
-  symbol: string;
+  instrumentKey: string;
   timeframe: Timeframe;
-  time: Date; // candle open time
+  /** Candle open time. */
+  time: Date;
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
+  /** Open interest; 0 for non-derivatives. */
+  oi: number;
+}
+
+/** ltp: price only (cheapest). full: price, depth, volume, OI. greeks: price, best bid/ask, OI, IV, greeks. */
+export type SubscriptionMode = "ltp" | "full" | "greeks";
+
+export interface Greeks {
+  delta: number;
+  theta: number;
+  gamma: number;
+  vega: number;
+  rho: number;
 }
 
 export interface Tick {
-  symbol: string;
-  time: Date;
+  instrumentKey: string;
   ltp: number;
+  /** Last trade time. */
+  time: Date;
+  /** Previous session's close. */
+  prevClose: number;
+  /** Only in "full"/"greeks" modes: */
   volume?: number;
+  oi?: number;
+  iv?: number;
+  greeks?: Greeks;
+  bestBid?: number;
+  bestAsk?: number;
 }
 
+/** Live prices and candles from the broker. The MarketEngine is the only thing that uses this directly. */
+export interface MarketData {
+  connect(): Promise<void>;
+  disconnect(): void;
+  /** Safe to call before connect(); subscriptions are (re)sent whenever the connection opens. */
+  subscribe(instrumentKeys: string[], mode?: SubscriptionMode): void;
+  unsubscribe(instrumentKeys: string[]): void;
+  onTick(handler: (tick: Tick) => void): void;
+  onConnectionChange(handler: (connected: boolean) => void): void;
+  /** Candles between two IST dates (inclusive, YYYY-MM-DD), oldest first. Includes today's so far when `to` is today. */
+  getCandles(instrumentKey: string, timeframe: Timeframe, from: string, to: string): Promise<Candle[]>;
+}
+
+// ---------- Orders and portfolio ----------
+
+/** MIS: intraday. CNC: equity delivery. NRML: carry-forward F&O. MTF: margin trading. */
+export type Product = "MIS" | "CNC" | "NRML" | "MTF";
+export type Side = "BUY" | "SELL";
+export type OrderType = "MARKET" | "LIMIT" | "SL" | "SL-M";
+export type Validity = "DAY" | "IOC";
+
+/**
+ * PENDING: accepted by the broker, not yet at the exchange. OPEN: waiting at the exchange.
+ * TRIGGER_PENDING: stop-loss waiting for its trigger. PARTIALLY_FILLED: open with some quantity filled.
+ * FILLED, CANCELLED, REJECTED are final (a cancelled order may still have filled partly).
+ */
+export type OrderStatus = "PENDING" | "OPEN" | "TRIGGER_PENDING" | "PARTIALLY_FILLED" | "FILLED" | "CANCELLED" | "REJECTED";
+
+export const FINAL_ORDER_STATUSES: readonly OrderStatus[] = ["FILLED", "CANCELLED", "REJECTED"];
+
+export type RunMode = "backtest" | "paper" | "live";
+
 export interface OrderRequest {
-  symbol: string;
-  exchange: Exchange;
+  instrumentKey: string;
   side: Side;
   quantity: number;
   type: OrderType;
   product: Product;
-  price?: number; // LIMIT / SL
-  triggerPrice?: number; // SL / SL-M
-  tag?: string; // strategy id, for tracing
+  /** LIMIT and SL only. */
+  price?: number;
+  /** SL and SL-M only. */
+  triggerPrice?: number;
+  /** Default DAY. */
+  validity?: Validity;
+  /** Free text shown in the broker's order book, e.g. the strategy id. Max 20 characters. */
+  tag?: string;
 }
 
-export interface Order extends OrderRequest {
+export interface OrderChanges {
+  quantity?: number;
+  price?: number;
+  triggerPrice?: number;
+  type?: OrderType;
+  validity?: Validity;
+}
+
+export interface PlaceOrderResult {
+  /** More than one when the broker split a large order into several (above the exchange freeze limit). */
+  orderIds: string[];
+  /** Set when some of the split orders failed; the ids above were still placed. */
+  error?: string;
+}
+
+export interface Order {
   id: string;
+  instrumentKey: string;
+  symbol: string;
+  side: Side;
+  type: OrderType;
+  product: Product;
+  validity: Validity;
+  quantity: number;
+  price: number;
+  triggerPrice: number;
   status: OrderStatus;
   filledQuantity: number;
+  pendingQuantity: number;
+  /** Average fill price; 0 until something fills. */
   averagePrice: number;
-  createdAt: Date;
-  updatedAt: Date;
-  rejectReason?: string;
+  /** Broker or exchange message, e.g. the rejection reason. */
+  statusMessage?: string;
+  tag?: string;
+  placedAt: Date;
+}
+
+/** One execution (fill). An order can have several. */
+export interface Trade {
+  id: string;
+  orderId: string;
+  instrumentKey: string;
+  symbol: string;
+  side: Side;
+  product: Product;
+  quantity: number;
+  price: number;
+  time: Date;
 }
 
 export interface Position {
+  instrumentKey: string;
   symbol: string;
-  exchange: Exchange;
   product: Product;
-  quantity: number; // negative = short
+  /** Net quantity; negative = short. */
+  quantity: number;
   averagePrice: number;
+  lastPrice: number;
   realizedPnl: number;
+  unrealizedPnl: number;
+  pnl: number;
 }
 
 export interface Funds {
+  /** Margin available for new trades (equity + F&O segment). */
   available: number;
   used: number;
 }
 
-/** Every broker adapter (paper, Zerodha, Upstox, ...) implements this. */
+/** Orders and portfolio at the broker. Real brokers and the paper broker both implement this. */
 export interface Broker {
   readonly name: string;
-  connect(): Promise<void>;
-  disconnect(): Promise<void>;
-  placeOrder(req: OrderRequest): Promise<Order>;
-  modifyOrder(id: string, changes: Partial<Pick<OrderRequest, "quantity" | "price" | "triggerPrice" | "type">>): Promise<Order>;
-  cancelOrder(id: string): Promise<Order>;
+  placeOrder(req: OrderRequest): Promise<PlaceOrderResult>;
+  modifyOrder(orderId: string, changes: OrderChanges): Promise<void>;
+  cancelOrder(orderId: string): Promise<void>;
+  getOrder(orderId: string): Promise<Order>;
+  /** Today's orders. */
   getOrders(): Promise<Order[]>;
+  /** Today's fills. */
+  getTrades(): Promise<Trade[]>;
   getPositions(): Promise<Position[]>;
   getFunds(): Promise<Funds>;
+  /** Called whenever an order placed through this broker changes status or fills more. */
   onOrderUpdate(handler: (order: Order) => void): void;
-}
-
-/** Source of market data: historical file/API for backtests, broker websocket for paper/live. */
-export interface DataFeed {
-  subscribe(symbols: string[], timeframe: Timeframe): Promise<void>;
-  onCandle(handler: (candle: Candle) => void): void;
-  onTick?(handler: (tick: Tick) => void): void;
-  getHistory(symbol: string, timeframe: Timeframe, from: Date, to: Date): Promise<Candle[]>;
-}
-
-/** What a strategy can see and do. The engine supplies it; strategies never touch a broker directly. */
-export interface StrategyContext {
-  mode: RunMode;
-  now(): Date;
-  history(symbol: string, count: number): Candle[];
-  position(symbol: string): Position | undefined;
-  buy(symbol: string, quantity: number, opts?: Partial<OrderRequest>): Promise<Order>;
-  sell(symbol: string, quantity: number, opts?: Partial<OrderRequest>): Promise<Order>;
-  log(message: string, data?: unknown): void;
-}
-
-export interface Strategy {
-  readonly id: string;
-  readonly symbols: string[];
-  readonly timeframe: Timeframe;
-  init?(ctx: StrategyContext): Promise<void> | void;
-  onCandle(candle: Candle, ctx: StrategyContext): Promise<void> | void;
-  onTick?(tick: Tick, ctx: StrategyContext): Promise<void> | void;
-  onOrderUpdate?(order: Order, ctx: StrategyContext): Promise<void> | void;
-  stop?(ctx: StrategyContext): Promise<void> | void;
+  /** Stops background work (e.g. polling for order updates). */
+  close(): void;
 }
 
 /** A logged-in broker session: the access token and when it stops working. */

@@ -49,6 +49,13 @@ export function istDateTime(date: string, hhmm: string): Date {
   return dayjs.tz(`${date} ${hhmm}`, "YYYY-MM-DD HH:mm", IST).toDate();
 }
 
+/** Parses an IST timestamp without timezone, e.g. "2026-10-05 09:20:01" as brokers report it. */
+export function parseIstTimestamp(value: string): Date {
+  const t = dayjs.tz(value, "YYYY-MM-DD HH:mm:ss", IST);
+  if (!t.isValid()) throw new Error(`Invalid timestamp "${value}", expected YYYY-MM-DD HH:mm:ss`);
+  return t.toDate();
+}
+
 export function addDays(date: string, days: number): string {
   return dayjs.utc(date).add(days, "day").format("YYYY-MM-DD");
 }

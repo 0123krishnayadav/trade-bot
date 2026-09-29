@@ -1,4 +1,4 @@
-import type { BrokerLogin } from "../../core/types";
+import type { Broker, BrokerLogin, InstrumentLookup, MarketData } from "../../core/types";
 import type { Logger } from "../../utils/logger";
 import { exchangeCode, type UpstoxAppCredentials } from "./auth";
 import { waitForLogin } from "./login-server";
@@ -7,6 +7,8 @@ import { UpstoxMarketDataApi } from "./market-data";
 import { UpstoxAccountApi } from "./account";
 import { UpstoxOrdersApi } from "./orders";
 import { UpstoxMarketFeed, type MarketFeedOptions } from "./market-feed";
+import { UpstoxMarketData } from "./market-data-adapter";
+import { UpstoxBroker } from "./broker-adapter";
 
 /** Upstox's daily browser login: open the link, log in, the local callback saves the token. */
 export function createUpstoxLogin(creds: UpstoxAppCredentials): BrokerLogin {
@@ -41,5 +43,18 @@ export function createUpstoxApi(
     account: new UpstoxAccountApi(http),
     orders: new UpstoxOrdersApi(http),
     feed: new UpstoxMarketFeed(http, { ...opts.feed, logger: opts.logger?.child("upstox:feed") }),
+  };
+}
+
+/** Upstox behind the broker-agnostic MarketData and Broker interfaces. */
+export function createUpstoxAdapters(opts: {
+  getAccessToken: () => string | undefined;
+  instruments: InstrumentLookup;
+  logger?: Logger;
+}): { marketData: MarketData; broker: Broker } {
+  const api = createUpstoxApi({ getAccessToken: opts.getAccessToken, logger: opts.logger });
+  return {
+    marketData: new UpstoxMarketData(api.marketData, api.feed),
+    broker: new UpstoxBroker(api.orders, api.account, opts.instruments, { logger: opts.logger?.child("upstox:orders") }),
   };
 }
