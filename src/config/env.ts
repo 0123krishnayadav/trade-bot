@@ -83,6 +83,21 @@ export class EnvReader {
     return value;
   }
 
+  /** Comma-separated dates (YYYY-MM-DD); empty when unset. */
+  dateList(name: string): string[] {
+    const raw = this.raw(name);
+    if (raw === undefined) return [];
+    const dates = raw.split(",").map((d) => d.trim()).filter(Boolean);
+    const bad = dates.filter((d) => !/^\d{4}-\d{2}-\d{2}$/.test(d) || Number.isNaN(Date.parse(`${d}T00:00:00Z`)));
+    if (bad.length) this.problems.push(`${name} must be comma-separated YYYY-MM-DD dates (bad: ${bad.join(", ")})`);
+    return dates;
+  }
+
+  /** Adds a problem found by a check across several settings. */
+  fail(problem: string): void {
+    this.problems.push(problem);
+  }
+
   done(): void {
     if (this.problems.length) throw new ConfigError(this.problems);
   }

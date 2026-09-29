@@ -10,9 +10,12 @@ export type AppEnv = (typeof APP_ENVS)[number];
 export const BROKERS = ["upstox"] as const;
 export type BrokerName = (typeof BROKERS)[number];
 
+export const TRADING_MODES = ["paper", "live"] as const;
+export type TradingMode = (typeof TRADING_MODES)[number];
+
 export interface Config {
   appEnv: AppEnv;
-  log: { level: LogLevel; format: LogFormat };
+  log: { level: LogLevel; format: LogFormat; /** Daily log files go here; undefined = terminal only. */ fileDir?: string };
   db: { path: string };
   /** Which broker the bot uses for market data and orders. */
   broker: BrokerName;
@@ -21,6 +24,20 @@ export interface Config {
     apiSecret: string;
     /** Must exactly match the redirect URL saved in the Upstox developer app. */
     redirectUri: string;
+  };
+  trading: {
+    /** paper: live prices, simulated fills. live: real orders. */
+    mode: TradingMode;
+    capital: number;
+  };
+  /** Overrides for the iron butterfly's defaults (src/strategies/iron-butterfly). */
+  ironButterfly: {
+    lots: number;
+    wingDistance: number;
+    stopLossPctOfCapital: number;
+    targetPctOfMaxProfit: number;
+    minDaysToExpiry: number;
+    skipDates: string[];
   };
 }
 
@@ -37,6 +54,7 @@ export function loadConfig(env: Env = process.env): Config {
     log: {
       level: r.oneOf("LOG_LEVEL", LOG_LEVELS, "info"),
       format: r.oneOf("LOG_FORMAT", LOG_FORMATS, appEnv === "production" ? "json" : "pretty"),
+      ...(r.boolean("LOG_TO_FILE", true) ? { fileDir: r.string("LOG_DIR", "./logs") } : {}),
     },
     db: {
       path: r.string("DB_PATH", "./db/trade-bot.sqlite"),
@@ -48,7 +66,24 @@ export function loadConfig(env: Env = process.env): Config {
       apiSecret: r.string("UPSTOX_API_SECRET"),
       redirectUri: r.url("UPSTOX_REDIRECT_URI", "http://127.0.0.1:5000/callback"),
     },
+    trading: {
+      mode: r.oneOf("TRADING_MODE", TRADING_MODES, "paper"),
+      capital: r.number("CAPITAL", 500_000, { min: 1 }),
+    },
+    ironButterfly: {
+      lots: r.number("IB_LOTS", 1, { integer: true, min: 1, max: 20 }),
+      wingDistance: r.number("IB_WING_DISTANCE", 400, { integer: true, min: 50 }),
+      stopLossPctOfCapital: r.number("IB_STOP_LOSS_PCT_OF_CAPITAL", 1, { min: 0.1, max: 10 }),
+      targetPctOfMaxProfit: r.number("IB_TARGET_PCT_OF_MAX_PROFIT", 40, { min: 1, max: 100 }),
+      minDaysToExpiry: r.number("IB_MIN_DAYS_TO_EXPIRY", 0, { integer: true, min: 0, max: 7 }),
+      skipDates: r.dateList("IB_SKIP_DATES"),
+    },
   };
+
+  // Real orders need a second, deliberate setting, so a typo in TRADING_MODE can't send them.
+  if (config.trading.mode === "live" && env.LIVE_TRADING_CONFIRM?.trim() !== "yes") {
+    r.fail("TRADING_MODE=live places real orders; also set LIVE_TRADING_CONFIRM=yes to allow it");
+  }
 
   r.done();
   return config;

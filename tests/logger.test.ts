@@ -59,3 +59,23 @@ test("nested child modules", () => {
   logger.child("upstox").child("ws").info("reconnecting");
   expect(lines[0]?.line).toContain("[upstox:ws] reconnecting");
 });
+
+test("writes to a file per IST day, from the root logger and its children", async () => {
+  const { mkdtempSync, readdirSync, readFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const dir = mkdtempSync(join(tmpdir(), "trade-bot-logs-"));
+  let now = new Date("2026-09-30T18:29:00Z"); // 23:59 IST on the 30th
+  const logger = createLogger({ level: "info", format: "pretty", clock: () => now, write: () => {}, fileDir: join(dir, "logs") });
+  logger.info("before midnight");
+  logger.child("strategy").warn("from a child");
+  now = new Date("2026-09-30T18:31:00Z"); // 00:01 IST on the 1st
+  logger.info("after midnight");
+
+  expect(readdirSync(join(dir, "logs")).sort()).toEqual(["2026-09-30.log", "2026-10-01.log"]);
+  expect(readFileSync(join(dir, "logs", "2026-09-30.log"), "utf8")).toBe(
+    "2026-09-30 23:59:00 INFO  before midnight\n2026-09-30 23:59:00 WARN  [strategy] from a child\n",
+  );
+  expect(readFileSync(join(dir, "logs", "2026-10-01.log"), "utf8")).toBe("2026-10-01 00:01:00 INFO  after midnight\n");
+  rmSync(dir, { recursive: true });
+});

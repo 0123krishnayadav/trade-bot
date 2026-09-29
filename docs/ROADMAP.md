@@ -35,7 +35,7 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 
 ## Phase 2: Upstox integration
 
-- [ ] **4. Upstox app setup (you).** Create an app in the Upstox developer console, set the
+- [x] **4. Upstox app setup (you).** Create an app in the Upstox developer console, set the
       redirect URL (e.g. `http://127.0.0.1:5000/callback`), put API key and secret in `.env`.
 - [x] **5. Login (OAuth).** Small `Bun.serve` callback server: open the login URL, receive the
       `code`, exchange it for an access token, save the token and its expiry in SQLite. Upstox
@@ -69,14 +69,15 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 
 - [ ] **15. Market calendar.** Trading hours and NSE holidays (from Upstox), weekly expiry
       resolution including holiday shifts.
-- [ ] **16. Charges calculator.** Brokerage, STT, exchange, SEBI, stamp duty, GST for F&O,
+- [x] **16. Charges calculator.** Brokerage, STT, exchange, SEBI, stamp duty, GST for F&O,
       checked against Upstox's brokerage API.
-- [ ] **17. Paper broker.** Live Upstox prices, simulated fills with slippage and charges,
+      *(Estimates in src/brokers/charges.ts; not yet checked against Upstox's brokerage API.)*
+- [x] **17. Paper broker.** Live Upstox prices, simulated fills with slippage and charges,
       positions and P&L. Same `Broker` interface as the real one.
 - [x] **18a. MarketEngine.** One shared feed; subscriptions shared between strategies; latest
       tick per instrument; candles per instrument/timeframe from history + live ticks; refill after
       reconnects.
-- [ ] **18b. StrategyEngine.** Runs strategies with a context (prices, candles, orders); error
+- [x] **18b. StrategyEngine.** Runs strategies with a context (prices, candles, orders); error
       isolation; clean shutdown that squares off.
 - [ ] **19. Order manager.** Multi-leg (basket) execution: hedges first, wait for fill
       confirmation, handle rejections and partial fills, retry and unwind safely.
@@ -85,7 +86,7 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 
 ## Phase 4: Strategy and testing
 
-- [ ] **21. Iron butterfly strategy.** 09:20 entry, 400-point wings, combined MTM target and
+- [x] **21. Iron butterfly strategy.** 09:20 entry, 400-point wings, combined MTM target and
       stop, 15:15 exit, one trade per day. Unit tests with fake market data.
 - [ ] **22. Backtester.** Replay historical candles through the same engine and strategy.
       Needs historical data for expired option contracts (check what our Upstox plan

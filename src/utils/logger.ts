@@ -1,4 +1,6 @@
-import { formatIst } from "./time";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { formatIst, istDate } from "./time";
 
 export const LOG_LEVELS = ["debug", "info", "warn", "error"] as const;
 export type LogLevel = (typeof LOG_LEVELS)[number];
@@ -24,6 +26,8 @@ export interface LoggerOptions {
   module?: string;
   clock?: () => Date;
   write?: (line: string, level: LogLevel) => void;
+  /** Also append every line to <dir>/<YYYY-MM-DD>.log (IST date; a new file each day). */
+  fileDir?: string;
 }
 
 const SEVERITY: Record<LogLevel, number> = { debug: 10, info: 20, warn: 30, error: 40 };
@@ -34,6 +38,15 @@ const SENSITIVE_KEY = /token|secret|password|passwd|api_?key|authorization|cooki
 function defaultWrite(line: string, level: LogLevel): void {
   if (level === "warn" || level === "error") console.error(line);
   else console.log(line);
+}
+
+/**
+ * Appends lines to a file per IST day. Writes are synchronous so nothing is lost if the process
+ * dies; at a few lines per second that costs nothing noticeable.
+ */
+export function dailyFileWriter(dir: string, clock: () => Date = () => new Date()): (line: string) => void {
+  mkdirSync(dir, { recursive: true });
+  return (line) => appendFileSync(join(dir, `${istDate(clock())}.log`), line + "\n");
 }
 
 function serialize(data: LogData): string {
@@ -47,7 +60,14 @@ function serialize(data: LogData): string {
 
 export function createLogger(opts: LoggerOptions): Logger {
   const clock = opts.clock ?? (() => new Date());
-  const write = opts.write ?? defaultWrite;
+  const toFile = opts.fileDir ? dailyFileWriter(opts.fileDir, clock) : undefined;
+  const toConsole = opts.write ?? defaultWrite;
+  const write = toFile
+    ? (line: string, level: LogLevel) => {
+        toConsole(line, level);
+        toFile(line);
+      }
+    : toConsole;
 
   const log = (level: LogLevel, message: string, data?: LogData) => {
     if (SEVERITY[level] < SEVERITY[opts.level]) return;
@@ -66,6 +86,6 @@ export function createLogger(opts: LoggerOptions): Logger {
     info: (message, data) => log("info", message, data),
     warn: (message, data) => log("warn", message, data),
     error: (message, data) => log("error", message, data),
-    child: (module) => createLogger({ ...opts, module: opts.module ? `${opts.module}:${module}` : module }),
+    child: (module) => createLogger({ ...opts, fileDir: undefined, write, module: opts.module ? `${opts.module}:${module}` : module }),
   };
 }

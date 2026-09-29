@@ -50,4 +50,52 @@ export const migrations: Migration[] = [
       count INTEGER NOT NULL
     );`,
   },
+  {
+    id: 3,
+    name: "orders, strategy trades and strategy state",
+    // Paper and live runs are kept apart by the mode column.
+    up: `CREATE TABLE orders (
+      mode TEXT NOT NULL,
+      broker TEXT NOT NULL,
+      id TEXT NOT NULL,
+      strategy_id TEXT,
+      instrument_key TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      side TEXT NOT NULL,
+      type TEXT NOT NULL,
+      product TEXT NOT NULL,
+      quantity INTEGER NOT NULL,
+      price REAL NOT NULL,
+      trigger_price REAL NOT NULL,
+      status TEXT NOT NULL,
+      filled_quantity INTEGER NOT NULL,
+      average_price REAL NOT NULL,
+      status_message TEXT,
+      tag TEXT,
+      placed_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mode, broker, id)
+    );
+    CREATE TABLE strategy_trades (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mode TEXT NOT NULL,
+      strategy_id TEXT NOT NULL,
+      trade_date TEXT NOT NULL,
+      opened_at TEXT NOT NULL,
+      closed_at TEXT NOT NULL,
+      exit_reason TEXT NOT NULL,
+      gross_pnl REAL NOT NULL,
+      charges REAL NOT NULL,
+      net_pnl REAL NOT NULL,
+      details TEXT
+    );
+    CREATE INDEX strategy_trades_by_strategy ON strategy_trades (mode, strategy_id, trade_date);
+    CREATE TABLE strategy_state (
+      mode TEXT NOT NULL,
+      strategy_id TEXT NOT NULL,
+      state TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (mode, strategy_id)
+    );`,
+  },
 ];

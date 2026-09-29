@@ -19,6 +19,7 @@ import type { UpstoxOrdersApi } from "./orders";
 import type { UpstoxPortfolioFeed } from "./portfolio-feed";
 import { toFunds, toOrder, toPosition, toPositionUpdate, toTrade, toUpstoxProduct } from "./mappers";
 import { UPSTOX_BROKER_NAME } from "./constants";
+import { checkOrder } from "../order-checks";
 
 export interface UpstoxBrokerOptions {
   logger?: Logger;
@@ -70,16 +71,7 @@ export class UpstoxBroker implements Broker {
   }
 
   async placeOrder(req: OrderRequest): Promise<PlaceOrderResult> {
-    const instrument = this.instruments.get(req.instrumentKey);
-    if (!instrument) throw new Error(`Unknown instrument ${req.instrumentKey}; is the instrument master up to date?`);
-    if (req.quantity % instrument.lotSize !== 0) {
-      throw new Error(`${instrument.symbol}: quantity ${req.quantity} is not a multiple of the lot size ${instrument.lotSize}`);
-    }
-    for (const [name, value] of [["price", req.price], ["triggerPrice", req.triggerPrice]] as const) {
-      if (value !== undefined && !onTick(value, instrument.tickSize)) {
-        throw new Error(`${instrument.symbol}: ${name} ${value} is not a multiple of the tick size ${instrument.tickSize}`);
-      }
-    }
+    const instrument = checkOrder(req, this.instruments);
 
     const result = await this.orders.placeOrder({
       instrument_token: req.instrumentKey,
@@ -273,10 +265,4 @@ function changed(a: Order, b: Order): boolean {
     a.price !== b.price ||
     a.triggerPrice !== b.triggerPrice
   );
-}
-
-/** Whether `price` is a whole number of ticks, allowing for floating-point noise (e.g. 20.15 / 0.05). */
-function onTick(price: number, tick: number): boolean {
-  const ticks = price / tick;
-  return Math.abs(ticks - Math.round(ticks)) < 1e-6;
 }

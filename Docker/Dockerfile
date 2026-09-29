@@ -16,8 +16,8 @@ FROM oven/bun:${BUN_VERSION}-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production APP_ENV=production
 COPY --from=build --chown=bun:bun /app/dist ./dist
-# SQLite lives here; mount a volume on it to keep data between container runs
-RUN mkdir -p /app/db && chown bun:bun /app/db
-VOLUME /app/db
+# SQLite and the daily log files live here; mount volumes to keep them between container runs
+RUN mkdir -p /app/db /app/logs && chown bun:bun /app/db /app/logs
+VOLUME ["/app/db", "/app/logs"]
 USER bun
 CMD ["bun", "run", "dist/index.js"]
