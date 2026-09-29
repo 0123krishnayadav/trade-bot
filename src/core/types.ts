@@ -115,3 +115,19 @@ export interface Strategy {
   onOrderUpdate?(order: Order, ctx: StrategyContext): Promise<void> | void;
   stop?(ctx: StrategyContext): Promise<void> | void;
 }
+
+/** A logged-in broker session: the access token and when it stops working. */
+export interface BrokerSession {
+  broker: string;
+  userId: string;
+  userName?: string;
+  accessToken: string;
+  issuedAt: Date;
+  expiresAt: Date;
+}
+
+/** Interactive login, implemented by each broker adapter (e.g. Upstox's daily browser login). */
+export interface BrokerLogin {
+  /** Starts a login. `onLoginUrl` receives the page the user must open to log in. */
+  login(onLoginUrl: (url: string) => void): Promise<BrokerSession>;
+}

@@ -11,6 +11,7 @@
   },
   "scripts": {
     "start": "bun run src/index.ts",
+    "login": "bun run src/login.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --target bun --minify --sourcemap=linked --outdir dist",

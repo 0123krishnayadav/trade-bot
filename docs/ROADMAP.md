@@ -37,7 +37,7 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 
 - [ ] **4. Upstox app setup (you).** Create an app in the Upstox developer console, set the
       redirect URL (e.g. `http://127.0.0.1:5000/callback`), put API key and secret in `.env`.
-- [ ] **5. Login (OAuth).** Small `Bun.serve` callback server: open the login URL, receive the
+- [x] **5. Login (OAuth).** Small `Bun.serve` callback server: open the login URL, receive the
       `code`, exchange it for an access token, save the token and its expiry in SQLite. Upstox
       tokens expire daily (early morning), so this is a once-a-day login.
 - [ ] **6. HTTP client.** One client for all Upstox REST calls: auth header, JSON parsing,

@@ -66,6 +66,23 @@ export class EnvReader {
     return allowed[0]!;
   }
 
+  /** An absolute URL; `protocols` restricts the scheme, e.g. ["http:", "https:"]. */
+  url(name: string, fallback?: string, protocols: string[] = ["http:", "https:"]): string {
+    const value = this.string(name, fallback);
+    if (!value) return value;
+    let parsed: URL;
+    try {
+      parsed = new URL(value);
+    } catch {
+      this.problems.push(`${name} must be a full URL like http://127.0.0.1:5000/callback (got "${value}")`);
+      return value;
+    }
+    if (!protocols.includes(parsed.protocol)) {
+      this.problems.push(`${name} must start with ${protocols.map((p) => `${p}//`).join(" or ")} (got "${value}")`);
+    }
+    return value;
+  }
+
   done(): void {
     if (this.problems.length) throw new ConfigError(this.problems);
   }
