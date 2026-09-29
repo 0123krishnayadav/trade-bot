@@ -43,7 +43,7 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 - [x] **6. HTTP client.** One client for all Upstox REST calls: auth header, JSON parsing,
       Upstox error codes → typed errors, rate limiting, retry on network errors only. Verified
       by fetching the user profile and funds.
-- [ ] **7. Instrument master.** Download and cache Upstox's instrument file daily. Look up
+- [x] **7. Instrument master.** Download and cache Upstox's instrument file daily. Look up
       NIFTY index, stocks, and option contracts by underlying/expiry/strike/CE-PE. Map our
       symbols ↔ Upstox `instrument_key`.
 - [x] **8. Historical candles.** Fetch historical and intraday candles for any instrument and

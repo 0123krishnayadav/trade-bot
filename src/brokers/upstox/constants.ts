@@ -50,6 +50,9 @@ export const UPSTOX_ENDPOINTS = {
   marketFeedAuthorize: "/v3/feed/market-data-feed/authorize",
 } as const;
 
+/** Daily instrument master for all exchanges (gzipped JSON, public, refreshed every morning). */
+export const UPSTOX_INSTRUMENTS_URL = "https://assets.upstox.com/market-quote/instruments/exchange/complete.json.gz";
+
 /** Full URL for an endpoint on the main host, e.g. upstoxUrl(UPSTOX_ENDPOINTS.token). */
 export function upstoxUrl(path: string, host: UpstoxHost = "api"): string {
   return new URL(path, UPSTOX_HOSTS[host]).toString();

@@ -17,4 +17,37 @@ export const migrations: Migration[] = [
       expires_at TEXT NOT NULL
     )`,
   },
+  {
+    id: 2,
+    name: "instruments",
+    // The broker's instrument master, replaced in full on each daily download.
+    up: `CREATE TABLE instruments (
+      broker TEXT NOT NULL,
+      key TEXT NOT NULL,
+      exchange TEXT NOT NULL,
+      segment TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      symbol TEXT NOT NULL,
+      name TEXT NOT NULL,
+      underlying TEXT,
+      underlying_key TEXT,
+      expiry TEXT,
+      strike REAL,
+      option_type TEXT,
+      weekly INTEGER,
+      lot_size INTEGER NOT NULL,
+      tick_size REAL NOT NULL,
+      freeze_quantity INTEGER,
+      isin TEXT,
+      series TEXT,
+      PRIMARY KEY (broker, key)
+    );
+    CREATE INDEX instruments_derivatives ON instruments (broker, underlying, kind, expiry, strike);
+    CREATE INDEX instruments_symbol ON instruments (broker, symbol);
+    CREATE TABLE instrument_downloads (
+      broker TEXT PRIMARY KEY,
+      downloaded_at TEXT NOT NULL,
+      count INTEGER NOT NULL
+    );`,
+  },
 ];
