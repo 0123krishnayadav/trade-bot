@@ -40,23 +40,25 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 - [x] **5. Login (OAuth).** Small `Bun.serve` callback server: open the login URL, receive the
       `code`, exchange it for an access token, save the token and its expiry in SQLite. Upstox
       tokens expire daily (early morning), so this is a once-a-day login.
-- [ ] **6. HTTP client.** One client for all Upstox REST calls: auth header, JSON parsing,
+- [x] **6. HTTP client.** One client for all Upstox REST calls: auth header, JSON parsing,
       Upstox error codes → typed errors, rate limiting, retry on network errors only. Verified
       by fetching the user profile and funds.
 - [ ] **7. Instrument master.** Download and cache Upstox's instrument file daily. Look up
       NIFTY index, stocks, and option contracts by underlying/expiry/strike/CE-PE. Map our
       symbols ↔ Upstox `instrument_key`.
-- [ ] **8. Historical candles.** Fetch historical and intraday candles for any instrument and
-      timeframe, return our `Candle` type, cache in SQLite.
-- [ ] **9. Live market data (websocket).** Connect to the Upstox market data feed, decode its
+- [x] **8. Historical candles.** Fetch historical and intraday candles for any instrument and
+      timeframe, return our `Candle` type. (Caching in SQLite moved to step 22, where the
+      backtester needs it.)
+- [x] **9. Live market data (websocket).** Connect to the Upstox market data feed, decode its
       messages (protobuf), subscribe/unsubscribe, emit ticks, auto-reconnect and resubscribe.
 - [ ] **10. Option chain.** Expiries and strikes for NIFTY, with LTP, OI and greeks from the
       option chain API. ATM strike lookup.
-- [ ] **11. Read-only account data.** Positions, holdings, funds and margin, order book and
+- [x] **11. Read-only account data.** Positions, holdings, funds and margin, order book and
       trade book mapped to our types.
-- [ ] **12. Orders.** Place, modify and cancel orders (MARKET, LIMIT, SL, SL-M). First tested
+- [x] **12. Orders.** Place, modify and cancel orders (MARKET, LIMIT, SL, SL-M). First tested
       read-only against the API docs and with mocked responses; one real test with a tiny,
-      far-from-market order that is cancelled immediately.
+      far-from-market order that is cancelled immediately. GTT orders too.
+      *(Built and unit-tested; the real-order test is still to do once logged in.)*
 - [ ] **13. Order updates (websocket).** Upstox portfolio stream for live order and position
       updates, with reconnect.
 - [ ] **14. Adapter complete.** `UpstoxBroker` and `UpstoxMarketData` implement the core

@@ -12,12 +12,14 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "login": "bun run src/login.ts",
+    "upstox": "bun run src/brokers/upstox/cli.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --target bun --minify --sourcemap=linked --outdir dist",
     "start:prod": "bun run dist/index.js"
   },
   "dependencies": {
-    "dayjs": "^1.11.23"
+    "dayjs": "^1.11.23",
+    "protobufjs": "^8.8.0"
   }
 }
