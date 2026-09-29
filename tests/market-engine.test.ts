@@ -157,6 +157,21 @@ test("several timeframes for one instrument are built from the same ticks", asyn
   expect(closed).toEqual(["1m 100", "1m 101", "1m 102", "1m 103", "1m 104", "5m 104"]);
 });
 
+test("a failed history load started by onCandleClose doesn't become an unhandled rejection", async () => {
+  const { md, engine } = setup();
+  md.failHistory = true;
+  const unhandled: unknown[] = [];
+  const onUnhandled = (err: unknown) => unhandled.push(err);
+  process.on("unhandledRejection", onUnhandled);
+  engine.onCandleClose("NIFTY", "5m", () => {}); // starts a history load nobody awaits
+  await Bun.sleep(10);
+  process.off("unhandledRejection", onUnhandled);
+  expect(unhandled).toEqual([]);
+  md.failHistory = false;
+  md.history = [candle("NIFTY", "5m", at("09:55"), 1)];
+  expect((await engine.candles("NIFTY", "5m", 10)).map((c) => c.close)).toEqual([1]); // and it's retried
+});
+
 test("a failed history load is retried on the next call", async () => {
   const { md, engine } = setup();
   md.failHistory = true;

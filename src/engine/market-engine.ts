@@ -203,8 +203,12 @@ export class MarketEngine {
       const load = this.loadHistory(series, needed).catch((err) => {
         this.seriesReady.delete(id); // retry on the next call
         this.historyRequested.delete(id);
+        this.opts.logger?.warn("candle history load failed, will retry", { instrumentKey, timeframe, error: String(err) });
         throw err;
       });
+      // Callers of candles() still see the error; this only stops a load nobody awaits (e.g. one
+      // started by onCandleClose) from becoming an unhandled rejection that takes the bot down.
+      load.catch(() => {});
       this.seriesReady.set(id, load);
     }
     return series;

@@ -26,6 +26,8 @@ export interface IronButterflyConfig {
   skipDates: string[];
   /** How long to wait for an order to fill before treating it as not filled. */
   fillTimeoutMs: number;
+  /** How long to wait for the chosen legs' first quotes after subscribing, per entry attempt. */
+  quoteWaitMs: number;
   /** Square off open legs when the bot shuts down. */
   squareOffOnStop: boolean;
 }
@@ -44,6 +46,7 @@ export const DEFAULT_IRON_BUTTERFLY: IronButterflyConfig = {
   minDaysToExpiry: 0,
   skipDates: [],
   fillTimeoutMs: 30_000,
+  quoteWaitMs: 5_000,
   squareOffOnStop: true,
 };
 
@@ -101,6 +104,7 @@ export class IronButterfly implements Strategy {
   private state!: State;
   private spotKey!: string;
   private lastAttempt = 0;
+  private lastQuoteWarning = -1;
   private readonly entry: number;
   private readonly lastEntry: number;
   private readonly exit: number;
@@ -209,6 +213,21 @@ export class IronButterfly implements Strategy {
     const [wingCe, wingPe, shortCe, shortPe] = [find(atm + this.cfg.wingDistance, "CE"), find(atm - this.cfg.wingDistance, "PE"), find(atm, "CE"), find(atm, "PE")];
     if (!wingCe || !wingPe || !shortCe || !shortPe) return this.finishDay(ctx, `strikes around ${atm} not listed for ${expiry}`);
 
+    // Quotes for newly subscribed contracts arrive a moment after subscribing. Ordering before
+    // they do would be rejected (paper) or blind (live), so wait for all four; if they don't come,
+    // stay idle and try again on the next event within the entry window.
+    const legKeys = [wingCe, wingPe, shortCe, shortPe].map((i) => i.key);
+    ctx.subscribe(legKeys, "full");
+    if (!(await this.waitForQuotes(ctx, legKeys))) {
+      const minute = istMinutes(ctx.now());
+      if (minute !== this.lastQuoteWarning) {
+        this.lastQuoteWarning = minute;
+        const missing = [wingCe, wingPe, shortCe, shortPe].filter((i) => !hasQuote(ctx, i.key)).map((i) => i.symbol);
+        ctx.log.warn("waiting for option quotes before entering", { missing });
+      }
+      return;
+    }
+
     const quantity = this.cfg.lots * shortCe.lotSize;
     const leg = (i: Instrument, side: Side): Leg => ({ key: i.key, symbol: i.symbol, side, quantity, filledIn: 0, valueIn: 0, filledOut: 0, valueOut: 0, charges: 0 });
     this.lastAttempt = ctx.now().getTime();
@@ -221,7 +240,6 @@ export class IronButterfly implements Strategy {
       openedAt: ctx.now().toISOString(),
       legs: [leg(wingCe, "BUY"), leg(wingPe, "BUY"), leg(shortCe, "SELL"), leg(shortPe, "SELL")],
     });
-    ctx.subscribe(this.state.legs.map((l) => l.key), "full");
     ctx.log.info("entering", { spot, atm, expiry, quantity });
 
     // Hedges first: brokers only give the lower hedged margin once the wings exist.
@@ -234,6 +252,11 @@ export class IronButterfly implements Strategy {
     }
 
     const credit = this.state.legs.reduce((sum, l) => sum + (l.side === "SELL" ? entryPrice(l) : -entryPrice(l)), 0);
+    if (!(credit > 0)) {
+      // An iron butterfly always takes in premium; anything else means bad quotes or fills.
+      ctx.log.error("entry gave no net credit, closing", { credit: round2(credit) });
+      return this.exitTrade(ctx, "ENTRY_FAILED");
+    }
     const maxProfit = credit * quantity;
     this.save(ctx, {
       ...this.state,
@@ -360,6 +383,16 @@ export class IronButterfly implements Strategy {
     }, 0);
   }
 
+  /** True once every key has a live bid or ask, polling until quoteWaitMs passes. */
+  private async waitForQuotes(ctx: StrategyContext, keys: string[]): Promise<boolean> {
+    const deadline = Date.now() + this.cfg.quoteWaitMs;
+    while (!keys.every((k) => hasQuote(ctx, k))) {
+      if (Date.now() >= deadline) return false;
+      await Bun.sleep(Math.min(100, this.cfg.quoteWaitMs));
+    }
+    return true;
+  }
+
   private finishDay(ctx: StrategyContext, note: string): void {
     ctx.log.info("no trade today", { reason: note });
     this.save(ctx, { ...this.state, phase: "done", note });
@@ -369,6 +402,11 @@ export class IronButterfly implements Strategy {
     this.state = state;
     ctx.saveState(state);
   }
+}
+
+function hasQuote(ctx: StrategyContext, key: string): boolean {
+  const tick = ctx.lastTick(key);
+  return !!tick && ((tick.bestBid ?? 0) > 0 || (tick.bestAsk ?? 0) > 0);
 }
 
 function describe(o: Order): string {

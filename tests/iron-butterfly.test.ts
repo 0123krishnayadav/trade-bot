@@ -109,9 +109,14 @@ test("a failed leg on entry unwinds the legs that filled", async () => {
   const h = tradingHarness();
   h.at("09:15");
   await h.add(new IronButterfly(cfg));
-  h.prices({ spot: 22710, ce: 150, pe: 140, wingCe: 20 }); // no price for the 22300 PE wing → rejected
+  h.prices(ENTRY);
+  const place = h.broker.placeOrder.bind(h.broker);
+  h.broker.placeOrder = async (req) => {
+    if (req.instrumentKey === key(22300, "PE")) throw new Error("broker refused the order"); // e.g. insufficient margin
+    return place(req);
+  };
   await h.clock("09:20");
-  expect(await orderLog(h)).toEqual(["BUY 23100 CE FILLED", "BUY 22300 PE REJECTED", "SELL 23100 CE FILLED"]);
+  expect(await orderLog(h)).toEqual(["BUY 23100 CE FILLED", "SELL 23100 CE FILLED"]);
   expect((await h.broker.getPositions()).every((p) => p.quantity === 0)).toBe(true);
   expect(h.store.trades()[0]!.exitReason).toBe("ENTRY_FAILED");
 });
@@ -170,6 +175,40 @@ test("orders and trades are saved with the strategy id", async () => {
   const rows = h.db.query("SELECT strategy_id, status, tag FROM orders WHERE mode = 'paper'").all() as { strategy_id: string; status: string; tag: string }[];
   expect(rows).toHaveLength(8);
   expect(rows.every((r) => r.strategy_id === "iron-butterfly" && r.status === "FILLED" && r.tag === "iron-butterfly")).toBe(true);
+});
+
+test("waits for the option legs' quotes before ordering (they arrive after subscribing)", async () => {
+  const h = tradingHarness();
+  h.at("09:15");
+  await h.add(new IronButterfly({ ...cfg, quoteWaitMs: 50 }));
+  h.prices({ spot: 22710 }); // NIFTY only: no option quotes yet, as right after subscribing
+  await h.clock("09:20");
+  expect(await h.broker.getOrders()).toHaveLength(0); // nothing sent, nothing rejected
+  expect(h.store.loadState<{ phase: string }>("iron-butterfly")?.phase ?? "idle").toBe("idle");
+  h.prices(ENTRY); // quotes arrive
+  await h.clock("09:21");
+  expect(await orderLog(h)).toEqual(["BUY 23100 CE FILLED", "BUY 22300 PE FILLED", "SELL 22700 CE FILLED", "SELL 22700 PE FILLED"]);
+});
+
+test("gives up for the day if option quotes never arrive in the entry window", async () => {
+  const h = tradingHarness();
+  h.at("09:15");
+  await h.add(new IronButterfly({ ...cfg, quoteWaitMs: 20 }));
+  h.prices({ spot: 22710 });
+  await h.clock("09:20");
+  await h.clock("09:31");
+  expect(await h.broker.getOrders()).toHaveLength(0);
+  expect(h.store.loadState<{ phase: string; note: string }>("iron-butterfly")).toMatchObject({ phase: "done", note: "entry window missed" });
+});
+
+test("a non-positive credit is treated as a failed entry, not an instant target hit", async () => {
+  const h = tradingHarness();
+  h.at("09:15");
+  await h.add(new IronButterfly(cfg));
+  h.prices({ spot: 22710, ce: 20, pe: 20, wingCe: 30, wingPe: 30 }); // nonsense quotes: wings dearer than the ATM options
+  await h.clock("09:20");
+  expect(h.store.trades()[0]!.exitReason).toBe("ENTRY_FAILED");
+  expect((await h.broker.getPositions()).every((p) => p.quantity === 0)).toBe(true);
 });
 
 test("doesn't enter on yesterday's price (sent by the broker on connect)", async () => {
