@@ -1,7 +1,8 @@
 // Conversions between Upstox's shapes and the broker-agnostic types in src/core.
-import type { Funds, Order, OrderStatus, Position, Product, SubscriptionMode, Tick, Timeframe, Trade } from "../../core/types";
+import type { Funds, Order, OrderStatus, Position, PositionUpdate, Product, SubscriptionMode, Tick, Timeframe, Trade } from "../../core/types";
 import { parseIstTimestamp } from "../../utils/time";
 import type { FeedMode, FeedTick } from "./feed-decoder";
+import type { UpstoxPositionMessage } from "./portfolio-feed";
 import type { CandleInterval, UpstoxFunds, UpstoxOrder, UpstoxPosition, UpstoxProduct, UpstoxTrade } from "./types";
 
 export const TIMEFRAMES: Record<Timeframe, CandleInterval> = {
@@ -96,6 +97,21 @@ export function toPosition(p: UpstoxPosition): Position {
     realizedPnl: p.realised,
     unrealizedPnl: p.unrealised,
     pnl: p.pnl,
+  };
+}
+
+/** Stream position messages can carry average_price 0; fall back to the buy or sell average then. */
+export function toPositionUpdate(p: UpstoxPositionMessage): PositionUpdate {
+  const fallback = p.quantity > 0 ? p.buy_price : p.quantity < 0 ? p.sell_price : 0;
+  return {
+    instrumentKey: p.instrument_token,
+    product: fromUpstoxProduct(p.product, p.instrument_token),
+    quantity: p.quantity,
+    averagePrice: p.average_price || fallback,
+    buyQuantity: (p.day_buy_quantity ?? 0) + (p.overnight_buy_quantity ?? 0),
+    sellQuantity: (p.day_sell_quantity ?? 0) + (p.overnight_sell_quantity ?? 0),
+    buyValue: p.buy_value,
+    sellValue: p.sell_value,
   };
 }
 

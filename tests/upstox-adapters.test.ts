@@ -4,6 +4,7 @@ import { UpstoxMarketDataApi } from "../src/brokers/upstox/market-data";
 import { UpstoxAccountApi } from "../src/brokers/upstox/account";
 import { UpstoxOrdersApi } from "../src/brokers/upstox/orders";
 import { UpstoxMarketFeed } from "../src/brokers/upstox/market-feed";
+import { UpstoxPortfolioFeed } from "../src/brokers/upstox/portfolio-feed";
 import { UpstoxMarketData } from "../src/brokers/upstox/market-data-adapter";
 import { UpstoxBroker } from "../src/brokers/upstox/broker-adapter";
 import { fromUpstoxProduct, toOrderStatus, toTick, toUpstoxProduct } from "../src/brokers/upstox/mappers";
@@ -122,7 +123,7 @@ const lookup: InstrumentLookup = {
 
 function broker(responses: Response[]) {
   const fake = fakeUpstox(responses);
-  const b = new UpstoxBroker(new UpstoxOrdersApi(fake.http), new UpstoxAccountApi(fake.http), lookup, { pollIntervalMs: 1 });
+  const b = new UpstoxBroker(new UpstoxOrdersApi(fake.http), new UpstoxAccountApi(fake.http), lookup, new UpstoxPortfolioFeed(fake.http));
   return { broker: b, calls: fake.calls };
 }
 
@@ -227,31 +228,75 @@ test("maps orders, positions and funds", async () => {
   expect(await b.getFunds()).toEqual({ available: 250000, used: 50000 });
 });
 
-test("reports order updates until the order is final, then stops polling", async () => {
-  const { broker: b, calls } = broker([
-    ok({ order_ids: ["250105000000001"] }),
-    ok([upstoxOrder("open pending")]),
-    ok([upstoxOrder("open pending")]), // unchanged: no update
-    ok([upstoxOrder("open", 0), upstoxOrder("complete", 65, { order_id: "someone-elses-order" })]),
-    ok([upstoxOrder("complete", 65)]),
-  ]);
-  const updates: Order[] = [];
-  b.onOrderUpdate((o) => updates.push(o));
-  await b.placeOrder(sell);
-  for (let i = 0; i < 100 && updates.at(-1)?.status !== "FILLED"; i++) await Bun.sleep(2);
-  await Bun.sleep(10);
+// ---------- closePosition ----------
 
-  expect(updates.map((o) => o.status)).toEqual(["PENDING", "OPEN", "FILLED"]);
-  expect(calls).toHaveLength(5); // no more polling after the fill
+const position = (quantity: number, product = "I") => ({
+  instrument_token: OPTION.key,
+  trading_symbol: OPTION.symbol,
+  product,
+  quantity,
+  average_price: 150,
+  last_price: 160,
+  realised: 0,
+  unrealised: 0,
+  pnl: 0,
+});
+
+test("closes a long with a SELL for the whole quantity at market, same product", async () => {
+  const { broker: b, calls } = broker([ok([position(130)]), ok({ order_ids: ["C1"] })]);
+  expect(await b.closePosition(OPTION.key)).toEqual({ orderIds: ["C1"] });
+  expect(calls[1]!.body).toMatchObject({ instrument_token: OPTION.key, transaction_type: "SELL", quantity: 130, order_type: "MARKET", product: "I", price: 0 });
   b.close();
 });
 
-test("a failed poll is retried", async () => {
-  const { broker: b } = broker([ok({ order_ids: ["250105000000001"] }), new Response("down", { status: 500 }), new Response("down", { status: 500 }), new Response("down", { status: 500 }), ok([upstoxOrder("complete", 65)])]);
-  const updates: Order[] = [];
-  b.onOrderUpdate((o) => updates.push(o));
-  await b.placeOrder(sell);
-  for (let i = 0; i < 200 && updates.length === 0; i++) await Bun.sleep(2);
-  expect(updates.map((o) => o.status)).toEqual(["FILLED"]);
+test("closes a short with a BUY, partly, at a limit price", async () => {
+  const { broker: b, calls } = broker([ok([position(-130, "D")]), ok({ order_ids: ["C1"] })]);
+  await b.closePosition(OPTION.key, { quantity: 65, type: "LIMIT", price: 120.5, tag: "tp" });
+  expect(calls[1]!.body).toMatchObject({ transaction_type: "BUY", quantity: 65, order_type: "LIMIT", price: 120.5, product: "D", tag: "tp" });
+  b.close();
+});
+
+test("refuses to close more than is open, or what isn't open", async () => {
+  const { broker: b, calls } = broker([ok([position(65)]), ok([position(0)]), ok([])]);
+  expect(b.closePosition(OPTION.key, { quantity: 130 })).rejects.toThrow("can close at most 65");
+  await Bun.sleep(1);
+  expect(b.closePosition(OPTION.key)).rejects.toThrow("No open position"); // closed earlier today: quantity 0
+  await Bun.sleep(1);
+  expect(b.closePosition(OPTION.key)).rejects.toThrow("No open position");
+  await Bun.sleep(1);
+  expect(calls.filter((c) => c.method === "POST")).toHaveLength(0);
+  b.close();
+});
+
+test("asks which product when both MIS and NRML are open", async () => {
+  const { broker: b, calls } = broker([ok([position(65, "I"), position(-130, "D")]), ok([position(65, "I"), position(-130, "D")]), ok({ order_ids: ["C1"] })]);
+  expect(b.closePosition(OPTION.key)).rejects.toThrow("MIS and NRML; pass product");
+  await Bun.sleep(1);
+  await b.closePosition(OPTION.key, { product: "NRML" });
+  expect(calls[2]!.body).toMatchObject({ transaction_type: "BUY", quantity: 130, product: "D" });
+  b.close();
+});
+
+test("counts pending closing orders so a position is never over-closed", async () => {
+  const { broker: b, calls } = broker([
+    ok([position(130)]),
+    ok({ order_ids: ["C1"] }), // closes 65, still pending
+    ok([position(130)]), // not filled yet, so the position still shows 130
+    ok({ order_ids: ["C2"] }),
+    ok([position(130)]),
+  ]);
+  await b.closePosition(OPTION.key, { quantity: 65 });
+  await b.closePosition(OPTION.key); // only the remaining 65
+  expect(calls[3]!.body).toMatchObject({ transaction_type: "SELL", quantity: 65 });
+  expect(b.closePosition(OPTION.key)).rejects.toThrow("already being closed by pending orders");
+  await Bun.sleep(1);
+  b.close();
+});
+
+test("a pending order on the other side doesn't count as closing", async () => {
+  const { broker: b, calls } = broker([ok({ order_ids: ["ADD"] }), ok([position(130)]), ok({ order_ids: ["C1"] })]);
+  await b.placeOrder({ ...sell, side: "BUY", quantity: 65, price: 100 }); // adding to the long, pending
+  await b.closePosition(OPTION.key);
+  expect(calls[2]!.body).toMatchObject({ transaction_type: "SELL", quantity: 130 });
   b.close();
 });

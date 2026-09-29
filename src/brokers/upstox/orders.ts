@@ -1,6 +1,7 @@
 import { UPSTOX_ENDPOINTS } from "./constants";
 import type { UpstoxHttp } from "./http";
 import type {
+  ExitPositionsFilter,
   ModifyGttOrderRequest,
   ModifyOrderRequest,
   PlaceGttOrderRequest,
@@ -29,6 +30,14 @@ export class UpstoxOrdersApi {
     return res.status === "partial_success"
       ? { orderIds: res.data.order_ids, errors: res.errors ?? [] }
       : { orderIds: res.data.order_ids };
+  }
+
+  async exitPositions(filter: ExitPositionsFilter = {}): Promise<PlaceOrderResult> {
+    const res = await this.http.request<{ order_ids: string[] }>("POST", UPSTOX_ENDPOINTS.exitPositions, {
+      query: { segment: filter.segment, tag: filter.tag },
+    });
+    const orderIds = res.data?.order_ids ?? [];
+    return res.status === "partial_success" ? { orderIds, errors: res.errors ?? [] } : { orderIds };
   }
 
   async modifyOrder(req: ModifyOrderRequest): Promise<string> {

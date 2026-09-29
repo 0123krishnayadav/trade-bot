@@ -33,6 +33,8 @@ export const UPSTOX_ENDPOINTS = {
   modifyOrder: "/v3/order/modify",
   cancelOrder: "/v3/order/cancel",
   orderBook: "/v2/order/retrieve-all",
+  /** Squares off open positions with MARKET orders; main host, not hft. */
+  exitPositions: "/v2/order/positions/exit",
   orderDetails: "/v2/order/details",
   tradesForDay: "/v2/order/trades/get-trades-for-day",
 
@@ -46,8 +48,10 @@ export const UPSTOX_ENDPOINTS = {
   historicalCandles: "/v3/historical-candle",
   intradayCandles: "/v3/historical-candle/intraday",
 
-  // Live market data websocket; returns a one-time wss:// URL
+  // Live websockets; each authorize call returns a one-time wss:// URL
   marketFeedAuthorize: "/v3/feed/market-data-feed/authorize",
+  /** Order, position, holding and GTT updates (JSON messages). */
+  portfolioFeedAuthorize: "/v2/feed/portfolio-stream-feed/authorize",
 } as const;
 
 /** Daily instrument master for all exchanges (gzipped JSON, public, refreshed every morning). */

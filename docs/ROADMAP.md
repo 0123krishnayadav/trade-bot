@@ -59,11 +59,11 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
       read-only against the API docs and with mocked responses; one real test with a tiny,
       far-from-market order that is cancelled immediately. GTT orders too.
       *(Built and unit-tested; the real-order test is still to do once logged in.)*
-- [ ] **13. Order updates (websocket).** Upstox portfolio stream for live order and position
+- [x] **13. Order updates (websocket).** Upstox portfolio stream for live order and position
       updates, with reconnect.
 - [x] **14. Adapter complete.** `UpstoxBroker` and `UpstoxMarketData` implement the core
       interfaces. Contract tests any future broker adapter must also pass.
-      *(Order updates poll the order book every second until step 13 adds the websocket.)*
+      *(Order updates come only from the portfolio stream (step 13); no polling.)*
 
 ## Phase 3: Trading core
 
@@ -73,8 +73,11 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
       checked against Upstox's brokerage API.
 - [ ] **17. Paper broker.** Live Upstox prices, simulated fills with slippage and charges,
       positions and P&L. Same `Broker` interface as the real one.
-- [ ] **18. Engine.** Wires market data → strategy → broker. Strategy context, error isolation,
-      clean shutdown that squares off.
+- [x] **18a. MarketEngine.** One shared feed; subscriptions shared between strategies; latest
+      tick per instrument; candles per instrument/timeframe from history + live ticks; refill after
+      reconnects.
+- [ ] **18b. StrategyEngine.** Runs strategies with a context (prices, candles, orders); error
+      isolation; clean shutdown that squares off.
 - [ ] **19. Order manager.** Multi-leg (basket) execution: hedges first, wait for fill
       confirmation, handle rejections and partial fills, retry and unwind safely.
 - [ ] **20. Risk manager.** Per-trade stop, daily max loss, max open positions, max lots,

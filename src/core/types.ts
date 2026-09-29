@@ -160,6 +160,26 @@ export interface OrderChanges {
   validity?: Validity;
 }
 
+export interface ClosePositionOptions {
+  /** How much to close; default the whole position. */
+  quantity?: number;
+  /** Default MARKET. */
+  type?: "MARKET" | "LIMIT";
+  /** Required for LIMIT. */
+  price?: number;
+  /** Needed only when the instrument has open positions in more than one product (e.g. MIS and NRML). */
+  product?: Product;
+  tag?: string;
+}
+
+/** Which open positions to square off; everything when empty. */
+export interface ExitPositionsFilter {
+  /** e.g. "NSE_FO" for F&O only. */
+  segment?: string;
+  /** Positions opened by orders with this tag (e.g. a strategy id). Intraday positions only. */
+  tag?: string;
+}
+
 export interface PlaceOrderResult {
   /** More than one when the broker split a large order into several (above the exchange freeze limit). */
   orderIds: string[];
@@ -215,6 +235,19 @@ export interface Position {
   pnl: number;
 }
 
+/** A change in net position, as the broker reports it right after a fill. P&L comes from live prices. */
+export interface PositionUpdate {
+  instrumentKey: string;
+  product: Product;
+  /** Net quantity; negative = short. */
+  quantity: number;
+  averagePrice: number;
+  buyQuantity: number;
+  sellQuantity: number;
+  buyValue: number;
+  sellValue: number;
+}
+
 export interface Funds {
   /** Margin available for new trades (equity + F&O segment). */
   available: number;
@@ -224,7 +257,20 @@ export interface Funds {
 /** Orders and portfolio at the broker. Real brokers and the paper broker both implement this. */
 export interface Broker {
   readonly name: string;
+  /** Opens the live order/position stream, if the broker has one. Call once before trading. */
+  start(): Promise<void>;
   placeOrder(req: OrderRequest): Promise<PlaceOrderResult>;
+  /**
+   * Squares off open positions at market, closing shorts before longs. For kill switches and
+   * end-of-day exits. Returns the exit order ids; their fills arrive through onOrderUpdate.
+   */
+  exitPositions(filter?: ExitPositionsFilter): Promise<PlaceOrderResult>;
+  /**
+   * Squares off one instrument's open position with an opposite order (SELL to close a long, BUY
+   * to close a short) in the same product. Never closes more than is open and not already being
+   * closed by a pending order.
+   */
+  closePosition(instrumentKey: string, opts?: ClosePositionOptions): Promise<PlaceOrderResult>;
   modifyOrder(orderId: string, changes: OrderChanges): Promise<void>;
   cancelOrder(orderId: string): Promise<void>;
   getOrder(orderId: string): Promise<Order>;
@@ -236,7 +282,9 @@ export interface Broker {
   getFunds(): Promise<Funds>;
   /** Called whenever an order placed through this broker changes status or fills more. */
   onOrderUpdate(handler: (order: Order) => void): void;
-  /** Stops background work (e.g. polling for order updates). */
+  /** Called when a position's net quantity changes (any fill in the account). */
+  onPositionUpdate(handler: (update: PositionUpdate) => void): void;
+  /** Closes the stream and stops background work. */
   close(): void;
 }
 

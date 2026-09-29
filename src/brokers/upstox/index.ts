@@ -7,6 +7,7 @@ import { UpstoxMarketDataApi } from "./market-data";
 import { UpstoxAccountApi } from "./account";
 import { UpstoxOrdersApi } from "./orders";
 import { UpstoxMarketFeed, type MarketFeedOptions } from "./market-feed";
+import { UpstoxPortfolioFeed } from "./portfolio-feed";
 import { UpstoxMarketData } from "./market-data-adapter";
 import { UpstoxBroker } from "./broker-adapter";
 
@@ -29,6 +30,8 @@ export interface UpstoxApi {
   orders: UpstoxOrdersApi;
   /** Live prices; call feed.connect() before subscribing. */
   feed: UpstoxMarketFeed;
+  /** Live order and position updates. */
+  portfolioFeed: UpstoxPortfolioFeed;
 }
 
 /** All Upstox REST APIs and the live feed, sharing one HTTP client (and so one rate limit). */
@@ -43,6 +46,7 @@ export function createUpstoxApi(
     account: new UpstoxAccountApi(http),
     orders: new UpstoxOrdersApi(http),
     feed: new UpstoxMarketFeed(http, { ...opts.feed, logger: opts.logger?.child("upstox:feed") }),
+    portfolioFeed: new UpstoxPortfolioFeed(http, { ...opts.feed, logger: opts.logger?.child("upstox:portfolio") }),
   };
 }
 
@@ -55,6 +59,6 @@ export function createUpstoxAdapters(opts: {
   const api = createUpstoxApi({ getAccessToken: opts.getAccessToken, logger: opts.logger });
   return {
     marketData: new UpstoxMarketData(api.marketData, api.feed),
-    broker: new UpstoxBroker(api.orders, api.account, opts.instruments, { logger: opts.logger?.child("upstox:orders") }),
+    broker: new UpstoxBroker(api.orders, api.account, opts.instruments, api.portfolioFeed, { logger: opts.logger?.child("upstox:orders") }),
   };
 }

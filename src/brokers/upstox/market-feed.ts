@@ -1,52 +1,34 @@
-import type { Logger } from "../../utils/logger";
 import { UPSTOX_ENDPOINTS } from "./constants";
-import { UpstoxAuthError } from "./errors";
 import type { UpstoxHttp } from "./http";
 import { decodeFeed, type FeedMode, type FeedTick } from "./feed-decoder";
+import { authorizedFeedUrl, ReconnectingSocket, type SocketOptions } from "./reconnecting-socket";
 import type { InstrumentKey } from "./types";
 
-/** The parts of the standard WebSocket we use, so tests can pass a fake. */
-export interface WebSocketLike {
-  binaryType: string;
-  readyState: number;
-  send(data: Uint8Array | string): void;
-  close(code?: number, reason?: string): void;
-  onopen: ((ev: unknown) => void) | null;
-  onmessage: ((ev: { data: unknown }) => void) | null;
-  onclose: ((ev: { code: number; reason: string }) => void) | null;
-  onerror: ((ev: unknown) => void) | null;
-}
-
-export interface MarketFeedOptions {
-  logger?: Logger;
-  createSocket?: (url: string) => WebSocketLike;
-  /** First reconnect delay; doubles each failed attempt up to maxReconnectDelayMs. */
-  reconnectDelayMs?: number;
-  maxReconnectDelayMs?: number;
-}
-
-const OPEN = 1;
+export type { WebSocketLike } from "./reconnecting-socket";
+export type MarketFeedOptions = SocketOptions;
 
 /**
- * Live prices over Upstox's market data websocket. Keeps track of subscriptions and, if the
- * connection drops, reconnects with backoff and subscribes to everything again. Stops trying only
- * on an authentication error (the session expired) or when close() is called.
+ * Live prices over Upstox's market data websocket. Keeps track of subscriptions and sends them
+ * again whenever the connection (re)opens.
  */
 export class UpstoxMarketFeed {
-  private socket?: WebSocketLike;
-  private connecting?: Promise<void>;
+  private readonly socket: ReconnectingSocket;
   private readonly subscriptions = new Map<InstrumentKey, FeedMode>();
   private readonly tickHandlers: ((tick: FeedTick) => void)[] = [];
   private readonly statusHandlers: ((status: Record<string, string>) => void)[] = [];
-  private readonly connectionHandlers: ((connected: boolean) => void)[] = [];
-  private closedByUser = false;
-  private reconnectAttempt = 0;
-  private reconnectTimer?: ReturnType<typeof setTimeout>;
 
   constructor(
-    private readonly http: UpstoxHttp,
+    http: UpstoxHttp,
     private readonly opts: MarketFeedOptions = {},
-  ) {}
+  ) {
+    this.socket = new ReconnectingSocket({
+      ...opts,
+      name: "market feed",
+      getUrl: () => authorizedFeedUrl(http, UPSTOX_ENDPOINTS.marketFeedAuthorize),
+      onOpen: () => this.resubscribe(),
+      onMessage: (data) => this.handleMessage(data),
+    });
+  }
 
   onTick(handler: (tick: FeedTick) => void): void {
     this.tickHandlers.push(handler);
@@ -58,19 +40,15 @@ export class UpstoxMarketFeed {
   }
 
   onConnectionChange(handler: (connected: boolean) => void): void {
-    this.connectionHandlers.push(handler);
+    this.socket.onConnectionChange(handler);
   }
 
   get connected(): boolean {
-    return this.socket?.readyState === OPEN;
+    return this.socket.connected;
   }
 
-  /** Resolves once the socket is open. Safe to call again while connecting or connected. */
   connect(): Promise<void> {
-    this.closedByUser = false;
-    if (this.connected) return Promise.resolve();
-    this.connecting ??= this.open().finally(() => (this.connecting = undefined));
-    return this.connecting;
+    return this.socket.connect();
   }
 
   subscribe(instrumentKeys: InstrumentKey[], mode: FeedMode = "ltpc"): void {
@@ -90,80 +68,21 @@ export class UpstoxMarketFeed {
   }
 
   close(): void {
-    this.closedByUser = true;
-    clearTimeout(this.reconnectTimer);
-    this.socket?.close(1000, "closed by client");
-  }
-
-  private async open(): Promise<void> {
-    // The authorize call returns a one-time wss:// URL, so it's repeated on every (re)connect.
-    const data = await this.http.call<{ authorizedRedirectUri?: string; authorized_redirect_uri?: string }>(
-      "GET",
-      UPSTOX_ENDPOINTS.marketFeedAuthorize,
-    );
-    const url = data.authorizedRedirectUri ?? data.authorized_redirect_uri;
-    if (!url) throw new Error("Upstox didn't return a websocket URL");
-
-    const socket = (this.opts.createSocket ?? ((u) => new WebSocket(u) as unknown as WebSocketLike))(url);
-    socket.binaryType = "arraybuffer";
-    this.socket = socket;
-
-    let opened = false;
-    await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => {
-        opened = true;
-        this.reconnectAttempt = 0;
-        this.opts.logger?.info("market feed connected", { subscriptions: this.subscriptions.size });
-        this.resubscribe();
-        this.connectionHandlers.forEach((h) => h(true));
-        resolve();
-      };
-      socket.onerror = (ev) => {
-        this.opts.logger?.warn("market feed socket error", { error: String((ev as { message?: string })?.message ?? ev) });
-        reject(new Error("Could not open the Upstox market feed websocket"));
-      };
-      socket.onclose = (ev) => {
-        reject(new Error(`Upstox market feed closed (${ev.code})`));
-        // Failing before opening is reported to whoever called connect(); only drops of a live
-        // connection trigger a reconnect here.
-        if (!opened || socket !== this.socket) return;
-        this.opts.logger?.warn("market feed disconnected", { code: ev.code, reason: ev.reason });
-        this.connectionHandlers.forEach((h) => h(false));
-        if (!this.closedByUser) this.scheduleReconnect();
-      };
-      socket.onmessage = (ev) => this.handleMessage(ev.data);
-    });
-  }
-
-  private scheduleReconnect(): void {
-    const base = this.opts.reconnectDelayMs ?? 1000;
-    const delay = Math.min(base * 2 ** this.reconnectAttempt, this.opts.maxReconnectDelayMs ?? 30_000);
-    this.reconnectAttempt++;
-    this.opts.logger?.info("market feed reconnecting", { attempt: this.reconnectAttempt, inMs: delay });
-    this.reconnectTimer = setTimeout(() => {
-      if (this.closedByUser) return;
-      this.connect().catch((err) => {
-        if (err instanceof UpstoxAuthError) {
-          this.opts.logger?.error("market feed stopped: not logged in", { error: err.message });
-          return;
-        }
-        this.opts.logger?.warn("market feed reconnect failed", { error: String(err) });
-        if (!this.connected && !this.closedByUser) this.scheduleReconnect();
-      });
-    }, delay);
+    this.socket.close();
   }
 
   private resubscribe(): void {
+    this.opts.logger?.info("market feed subscriptions restored", { instruments: this.subscriptions.size });
     const byMode = new Map<FeedMode, InstrumentKey[]>();
     for (const [key, mode] of this.subscriptions) byMode.set(mode, [...(byMode.get(mode) ?? []), key]);
     for (const [mode, keys] of byMode) this.send("sub", keys, mode);
   }
 
   private send(method: "sub" | "unsub" | "change_mode", instrumentKeys: InstrumentKey[], mode?: FeedMode): void {
-    if (!this.connected || instrumentKeys.length === 0) return; // sent on (re)connect instead
+    if (instrumentKeys.length === 0) return;
     const message = { guid: crypto.randomUUID(), method, data: { instrumentKeys, ...(mode ? { mode } : {}) } };
-    // Upstox only accepts these requests as binary frames.
-    this.socket!.send(new TextEncoder().encode(JSON.stringify(message)));
+    // Upstox only accepts these requests as binary frames. If not connected, they're sent on (re)connect.
+    this.socket.send(new TextEncoder().encode(JSON.stringify(message)));
   }
 
   private handleMessage(data: unknown): void {

@@ -146,6 +146,13 @@ export interface ModifyOrderRequest {
   disclosed_quantity?: number;
 }
 
+export interface ExitPositionsFilter {
+  /** Only positions in this segment, e.g. "NSE_FO". */
+  segment?: string;
+  /** Only positions opened by orders with this tag. Upstox applies tags to intraday positions only. */
+  tag?: string;
+}
+
 export interface PlaceOrderResult {
   /** Several ids when the order was sliced. */
   orderIds: string[];

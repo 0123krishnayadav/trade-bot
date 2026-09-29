@@ -168,3 +168,41 @@ test("validates GTT rules", async () => {
   expect(orders.placeGttOrder({ ...base, type: "MULTIPLE", rules: [entry, { ...target, trailing_gap: 5 }] })).rejects.toThrow("trailing_gap");
   expect(calls).toHaveLength(0);
 });
+
+// ---------- Exit positions ----------
+
+test("exit positions: main host, POST, optional filters", async () => {
+  const { http, calls } = fakeUpstox([ok({ order_ids: ["1", "2"] }, { errors: null, summary: { total: 2, success: 2, error: 0 } }), ok({ order_ids: [] })]);
+  const orders = new UpstoxOrdersApi(http);
+  expect(await orders.exitPositions({ segment: "NSE_FO", tag: "iron-butterfly" })).toEqual({ orderIds: ["1", "2"] });
+  await orders.exitPositions();
+  expect(calls.map((c) => `${c.method} ${c.url}`)).toEqual([
+    "POST https://api.upstox.com/v2/order/positions/exit?segment=NSE_FO&tag=iron-butterfly",
+    "POST https://api.upstox.com/v2/order/positions/exit",
+  ]);
+  expect(calls[0]!.body).toBeUndefined();
+});
+
+test("exit positions: partial success (HTTP 207) keeps the placed ids and the errors", async () => {
+  const { http } = fakeUpstox([
+    Response.json(
+      {
+        status: "partial_success",
+        data: { order_ids: ["1"] },
+        errors: [{ error_code: "UDAPI1113", message: "The Exit Positions API is accessible during the market hours only.", instrument_key: "NSE_EQ|INE002A01018" }],
+        summary: { total: 2, success: 1, error: 1 },
+      },
+      { status: 207 },
+    ),
+  ]);
+  const result = await new UpstoxOrdersApi(http).exitPositions();
+  expect(result.orderIds).toEqual(["1"]);
+  expect(result.errors?.[0]?.instrument_key).toBe("NSE_EQ|INE002A01018");
+});
+
+test("exit positions: a total failure is an error", async () => {
+  const { http } = fakeUpstox([
+    Response.json({ status: "error", errors: [{ error_code: "UDAPI1113", message: "The Exit Positions API is accessible during the market hours only." }] }, { status: 400 }),
+  ]);
+  expect(new UpstoxOrdersApi(http).exitPositions()).rejects.toThrow("market hours only. (UDAPI1113)");
+});
