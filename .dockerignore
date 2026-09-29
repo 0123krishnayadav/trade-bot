@@ -1,0 +1,11 @@
+node_modules
+dist
+out
+coverage
+.git
+.env
+.env.*
+*.log
+.DS_Store
+.idea
+Docker

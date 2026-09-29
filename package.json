@@ -10,6 +10,8 @@
     "typescript": "^7"
   },
   "scripts": {
-    "start": "bun run src/index.ts"
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --target bun --minify --sourcemap=linked --outdir dist",
+    "start:prod": "bun run dist/index.js"
   }
 }
