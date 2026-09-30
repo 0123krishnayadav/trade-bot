@@ -1,6 +1,9 @@
 // Estimated trading charges in India: brokerage, STT, exchange fees, SEBI fee, stamp duty, GST.
 // Used for paper fills and to estimate net P&L. Rates change with budgets and exchange circulars
 // and differ slightly between brokers, so treat results as estimates and check your contract notes.
+//
+// Rates last checked against Upstox's brokerage calculator (GET /v2/charges/brokerage) on
+// 2026-09-30; tests/charges.test.ts pins those results. Re-check after each Union Budget.
 import type { Instrument, Product, Side } from "../core/types";
 
 interface Rates {
@@ -11,14 +14,17 @@ interface Rates {
   stampBuy: number;
 }
 
-const OPTIONS: Rates = { sttSell: 0.1, sttBuy: 0, exchange: 0.03503, stampBuy: 0.003 };
-const FUTURES: Rates = { sttSell: 0.02, sttBuy: 0, exchange: 0.00173, stampBuy: 0.002 };
+// STT on option sells is on the premium; on futures sells on the contract value.
+const OPTIONS: Rates = { sttSell: 0.15, sttBuy: 0, exchange: 0.0354, stampBuy: 0.003 };
+const FUTURES: Rates = { sttSell: 0.05, sttBuy: 0, exchange: 0.00173, stampBuy: 0.002 };
 const EQUITY_INTRADAY: Rates = { sttSell: 0.025, sttBuy: 0, exchange: 0.00297, stampBuy: 0.003 };
 const EQUITY_DELIVERY: Rates = { sttSell: 0.1, sttBuy: 0.1, exchange: 0.00297, stampBuy: 0.015 };
 
 const SEBI_PCT = 0.0001; // ₹10 per crore
 const GST_PCT = 18; // on brokerage + exchange + SEBI fees
 const BROKERAGE_PER_ORDER = 20;
+/** Upstox's equity intraday brokerage: this % of turnover, capped at BROKERAGE_PER_ORDER. */
+const EQUITY_INTRADAY_BROKERAGE_PCT = 0.06;
 
 export interface ChargeBreakdown {
   brokerage: number;
@@ -42,8 +48,8 @@ export function estimateCharges(instrument: Pick<Instrument, "kind">, side: Side
           ? EQUITY_INTRADAY
           : EQUITY_DELIVERY;
   const pct = (p: number) => (turnover * p) / 100;
-  // Discount brokers cap equity intraday brokerage at a small percentage for tiny orders.
-  const brokerage = rates === EQUITY_INTRADAY ? Math.min(BROKERAGE_PER_ORDER, pct(0.1)) : BROKERAGE_PER_ORDER;
+  // Equity intraday brokerage is a small percentage, capped at the flat per-order fee.
+  const brokerage = rates === EQUITY_INTRADAY ? Math.min(BROKERAGE_PER_ORDER, pct(EQUITY_INTRADAY_BROKERAGE_PCT)) : BROKERAGE_PER_ORDER;
   const stt = pct(side === "SELL" ? rates.sttSell : rates.sttBuy);
   const exchange = pct(rates.exchange);
   const sebi = pct(SEBI_PCT);

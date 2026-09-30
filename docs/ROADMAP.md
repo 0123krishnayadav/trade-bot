@@ -71,7 +71,7 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
       resolution including holiday shifts.
 - [x] **16. Charges calculator.** Brokerage, STT, exchange, SEBI, stamp duty, GST for F&O,
       checked against Upstox's brokerage API.
-      *(Estimates in src/brokers/charges.ts; not yet checked against Upstox's brokerage API.)*
+      *(Checked against Upstox's brokerage API on 2026-09-30; tests/charges.test.ts pins the results.)*
 - [x] **17. Paper broker.** Live Upstox prices, simulated fills with slippage and charges,
       positions and P&L. Same `Broker` interface as the real one.
 - [x] **18a. MarketEngine.** One shared feed; subscriptions shared between strategies; latest
