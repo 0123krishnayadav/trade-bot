@@ -22,6 +22,8 @@ export interface UpstoxHttpOptions {
   maxRequestsPerSecond?: number;
   /** Retries for GET requests on network errors, HTTP 429 and 5xx. */
   maxRetries?: number;
+  /** Per-attempt limit; a hung request counts as a network error. Default 15 s. */
+  timeoutMs?: number;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
 }
@@ -80,7 +82,8 @@ export class UpstoxHttp {
       const started = this.now();
       let res: Response;
       try {
-        res = await this.fetchFn(url.toString(), init);
+        // Without a limit a stalled connection would hang the caller (e.g. a strategy's queue) forever.
+        res = await this.fetchFn(url.toString(), { ...init, signal: AbortSignal.timeout(this.opts.timeoutMs ?? 15_000) });
       } catch (err) {
         if (attempt < retries) {
           await this.backoff(attempt, method, url, String(err));

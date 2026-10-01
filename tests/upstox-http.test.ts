@@ -82,3 +82,21 @@ test("rate-limits to the configured requests per second", async () => {
   await http.call<any>("GET", "/c"); // third within one second: waits until the first is 1s old
   expect(slept).toEqual([900]);
 });
+
+test("a hung request times out instead of waiting forever (and GETs retry it)", async () => {
+  let calls = 0;
+  const hang = (_url: string | URL | Request, init?: RequestInit) =>
+    new Promise<Response>((_, reject) => {
+      calls++;
+      init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+    });
+  const http = new UpstoxHttp({ getAccessToken: () => "t", fetchFn: hang as typeof fetch, timeoutMs: 20, maxRetries: 1, sleep: async () => {} });
+  expect(http.call("GET", "/v2/user/profile")).rejects.toThrow(/Network error calling Upstox GET/);
+  await Bun.sleep(100);
+  expect(calls).toBe(2); // first attempt + one retry
+
+  calls = 0;
+  expect(http.call("POST", "/v3/order/place", { body: {} })).rejects.toThrow(/Network error/);
+  await Bun.sleep(50);
+  expect(calls).toBe(1); // orders are never retried
+});

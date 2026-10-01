@@ -68,6 +68,11 @@ export interface Leg {
   charges: number;
   /** Orders sent for this leg whose outcome isn't known yet; settled before anything new is sent. */
   pending?: string[];
+  /**
+   * Which stage sent the pending orders. An entry order confirmed late (during the unwind) must
+   * count as bought, not as an exit. Missing in state saved by older versions: the current stage.
+   */
+  pendingStage?: "entry" | "exit";
 }
 
 interface State {
@@ -319,16 +324,19 @@ export class IronButterfly implements Strategy {
    * Returns true when the leg reached its target.
    */
   private async fillLeg(ctx: StrategyContext, leg: Leg, stage: "entry" | "exit"): Promise<boolean> {
-    const side: Side = stage === "entry" ? leg.side : leg.side === "BUY" ? "SELL" : "BUY";
+    const side = sideFor(leg, stage);
     const remaining = () => (stage === "entry" ? leg.quantity - leg.filledIn : openQty(leg));
 
     if (leg.pending?.length) {
+      // Settle the earlier attempt first, booked to the stage that sent it.
+      const pendingStage = leg.pendingStage ?? stage;
       let orders = await ctx.waitForOrders(leg.pending, 1_000);
       for (const o of orders) if (!FINAL_ORDER_STATUSES.includes(o.status)) await ctx.cancelOrder(o.id).catch(() => {});
       orders = await ctx.waitForOrders(leg.pending, this.cfg.fillTimeoutMs);
       if (orders.length < leg.pending.length || orders.some((o) => !FINAL_ORDER_STATUSES.includes(o.status))) return false;
-      this.addFills(leg, orders, side, stage);
+      this.addFills(leg, orders, sideFor(leg, pendingStage), pendingStage);
       leg.pending = undefined;
+      leg.pendingStage = undefined;
       this.save(ctx, this.state);
     }
 
@@ -338,6 +346,7 @@ export class IronButterfly implements Strategy {
       const result = await ctx.placeOrder({ instrumentKey: leg.key, side, quantity, type: "MARKET", product: "MIS" });
       if (result.error) ctx.log.warn("order partly placed", { symbol: leg.symbol, error: result.error });
       leg.pending = result.orderIds;
+      leg.pendingStage = stage;
       this.save(ctx, this.state);
     } catch (err) {
       ctx.log.error(`${stage} order failed`, { symbol: leg.symbol, error: String(err) });
@@ -351,6 +360,7 @@ export class IronButterfly implements Strategy {
     }
     this.addFills(leg, orders, side, stage);
     leg.pending = undefined;
+    leg.pendingStage = undefined;
     this.save(ctx, this.state);
     if (remaining() > 0) ctx.log.error(`${stage} leg not fully filled`, { symbol: leg.symbol, remaining: remaining(), statuses: orders.map(describe) });
     return remaining() <= 0;
@@ -426,6 +436,11 @@ export class IronButterfly implements Strategy {
     this.state = state;
     ctx.saveState(state);
   }
+}
+
+/** Entry trades the leg's own side; exit trades the opposite. */
+function sideFor(leg: Leg, stage: "entry" | "exit"): Side {
+  return stage === "entry" ? leg.side : leg.side === "BUY" ? "SELL" : "BUY";
 }
 
 function hasQuote(ctx: StrategyContext, key: string): boolean {

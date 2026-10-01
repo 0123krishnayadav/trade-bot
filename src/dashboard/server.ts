@@ -17,6 +17,7 @@ import { KillSwitchService } from "./services/kill-switch-service";
 import { MarketService } from "./services/market-service";
 import { OrdersService } from "./services/orders-service";
 import { StaticSite, WEB_DIST_DIR } from "./static-site";
+import { RUNNING_BUILT } from "../process/child";
 
 /** Only used with --dev. A variable, not a literal, so `bun run build` doesn't bundle the page into the server. */
 const DEV_PAGE = "./web/index.html";
@@ -25,7 +26,18 @@ async function main(): Promise<void> {
   const dev = process.argv.includes("--dev");
   const config = loadDashboardConfig();
   // Checked first, so a missing build fails fast with a clear message.
-  const site = dev ? undefined : new StaticSite(WEB_DIST_DIR);
+  let site: StaticSite | undefined;
+  if (!dev) {
+    try {
+      site = new StaticSite(WEB_DIST_DIR);
+    } catch (err) {
+      // From source (e.g. `bun run all` in development) without a build: bundle the page on the fly
+      // rather than fail. The built server (dist/) has no page source, so there it stays an error.
+      if (RUNNING_BUILT) throw err;
+      console.warn(`No dashboard build in ${WEB_DIST_DIR}: bundling the page on the fly (slower). Run \`bun run dashboard:build\` for the fast version.`);
+    }
+  }
+  const onTheFly = !site;
   const logger = createLogger({ level: "info", format: config.appEnv === "production" ? "json" : "pretty" }).child("dashboard");
 
   // Read-only for everything shown; the bot creates the file and the schema.
@@ -61,7 +73,7 @@ async function main(): Promise<void> {
         logger,
       }),
       // Every other path is the React app, which does its own routing (/login, /, ...).
-      "/*": dev ? (await import(DEV_PAGE)).default : (req: Request) => site!.serve(req),
+      "/*": onTheFly ? (await import(DEV_PAGE)).default : (req: Request) => site!.serve(req),
     },
     development: dev ? { hmr: true, console: true } : false,
     error(err) {
@@ -70,7 +82,7 @@ async function main(): Promise<void> {
     },
   });
 
-  logger.info(`dashboard running at ${server.url}`, { mode: config.mode, db: config.dbPath, page: dev ? "dev (bundled on the fly, hot reload)" : WEB_DIST_DIR });
+  logger.info(`dashboard running at ${server.url}`, { mode: config.mode, db: config.dbPath, page: dev ? "dev (bundled on the fly, hot reload)" : onTheFly ? "bundled on the fly (no build)" : WEB_DIST_DIR });
   if (config.host !== "127.0.0.1" && config.host !== "localhost") {
     logger.warn("dashboard is listening beyond this machine; prefer 127.0.0.1 with an SSH tunnel or Tailscale");
   }

@@ -4,6 +4,7 @@ import { migrate, openDatabase } from "../src/store/database";
 import { migrations } from "../src/store/migrations";
 import { TradingStore } from "../src/store/trading-store";
 import { tradingHarness, key, settle } from "./trading-harness";
+import type { Order } from "../src/core/types";
 
 // NIFTY at 22710 → ATM 22700, wings 22300 PE and 23100 CE (400 points), 1 lot = 65.
 // Entry prices (bid/ask spread 0.10): shorts sold at bid, wings bought at ask.
@@ -183,10 +184,12 @@ test("waits for the option legs' quotes before ordering (they arrive after subsc
   await h.add(new IronButterfly({ ...cfg, quoteWaitMs: 50 }));
   h.prices({ spot: 22710 }); // NIFTY only: no option quotes yet, as right after subscribing
   await h.clock("09:20");
+  await settle(150); // longer than quoteWaitMs, so the first attempt has given up even on a busy machine
   expect(await h.broker.getOrders()).toHaveLength(0); // nothing sent, nothing rejected
   expect(h.store.loadState<{ phase: string }>("iron-butterfly")?.phase ?? "idle").toBe("idle");
   h.prices(ENTRY); // quotes arrive
   await h.clock("09:21");
+  await settle(150);
   expect(await orderLog(h)).toEqual(["BUY 23100 CE FILLED", "BUY 22300 PE FILLED", "SELL 22700 CE FILLED", "SELL 22700 PE FILLED"]);
 });
 
@@ -277,4 +280,32 @@ test("kill switch when the saved state is from yesterday still marks today as do
   h.prices(ENTRY);
   await h.clock("09:20");
   expect(await h.broker.getOrders()).toHaveLength(0);
+});
+
+test("an entry fill confirmed only after the timeout is counted as entry, then closed", async () => {
+  // The wing's entry BUY fills, but its confirmation arrives late (slow broker, or the order stream
+  // reconnecting). The entry gives up and unwinds; the late fill must still count as bought.
+  const h = tradingHarness();
+  h.at("09:15");
+  await h.add(new IronButterfly({ ...cfg, fillTimeoutMs: 300 }));
+  h.prices(ENTRY);
+  const broker = h.broker as unknown as { emit(o: Order): void };
+  const emit = broker.emit.bind(h.broker);
+  const held: Order[] = [];
+  let holding = true;
+  broker.emit = (o: Order) => (holding && o.instrumentKey === key(23100, "CE") && o.side === "BUY" ? void held.push({ ...o }) : emit(o));
+
+  await h.clock("09:20"); // wing CE times out -> entry fails -> unwind can't settle it yet either
+  await settle(1_500);
+  expect(h.store.loadState<{ phase: string }>("iron-butterfly")!.phase).toBe("exiting");
+
+  holding = false;
+  for (const o of held) emit(o); // the late confirmation arrives
+  await h.clock("09:21"); // the next unwind attempt
+  await settle(1_500);
+
+  expect((await h.broker.getPositions()).every((p) => p.quantity === 0)).toBe(true); // the bought wing was sold
+  const trade = h.store.trades()[0]!;
+  expect(trade.exitReason).toBe("ENTRY_FAILED");
+  expect((trade.details as { legs: { symbol: string; side: string; quantity: number }[] }).legs.find((l) => l.symbol.includes("23100 CE"))).toMatchObject({ side: "BUY", quantity: 65 });
 });
