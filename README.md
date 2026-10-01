@@ -32,6 +32,7 @@ bun run dashboard:build  # only the dashboard page (dist/web), e.g. after changi
 ```
 
 The built backend is self-contained (no `node_modules` needed); the Docker image contains only `dist/`.
+Running in production, the daily Upstox login on a server and the dashboard setup: see `docs/PRODUCTION.md`.
 During development keep running from source (`bun run start`, `bun run dashboard:dev`).
 
 ## Notes
