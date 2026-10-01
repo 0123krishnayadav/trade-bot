@@ -38,14 +38,8 @@ export function HistoryPage({ mode, onLoggedOut }: { mode: "paper" | "live"; onL
     void load();
   }, [load]);
 
-  const refresh = (
-    <Button variant="default" size="xs" onClick={() => void load()} loading={loading}>
-      Refresh
-    </Button>
-  );
-
   return (
-    <Layout mode={mode} onLoggedOut={onLoggedOut} actions={refresh}>
+    <Layout mode={mode} onLoggedOut={onLoggedOut} onRefresh={() => void load()} refreshing={loading}>
       <Stack maw={1200} mx="auto">
         <Group gap="sm">
           <Button variant="subtle" color="gray" size="xs" onClick={() => navigate("/")}>

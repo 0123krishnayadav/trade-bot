@@ -17,6 +17,10 @@ export interface DashboardConfig {
   sessionHours: number;
   /** Send the cookie only over HTTPS. Turn on when the dashboard is served through HTTPS. */
   secureCookie: boolean;
+  /** The bot's risk limits, read from the same settings with the same defaults, for display. */
+  risk: { maxDailyLoss: number; maxOpenPositions: number };
+  /** The index shown in the market strip. */
+  underlying: string;
 }
 
 /** Dashboard settings. Separate from the bot's config so the dashboard needs no broker API keys. */
@@ -34,6 +38,13 @@ export function loadDashboardConfig(env: Env = process.env): DashboardConfig {
     sessionSecret: r.string("DASHBOARD_SESSION_SECRET"),
     sessionHours: r.number("DASHBOARD_SESSION_HOURS", 24, { min: 1, max: 24 * 30 }),
     secureCookie: r.boolean("DASHBOARD_SECURE_COOKIE", false),
+    risk: { maxDailyLoss: 0, maxOpenPositions: 0 },
+    underlying: "NIFTY",
+  };
+  const capital = r.number("CAPITAL", 500_000, { min: 1 });
+  config.risk = {
+    maxDailyLoss: r.number("RISK_MAX_DAILY_LOSS", Math.round(capital * 0.02), { min: 1 }),
+    maxOpenPositions: r.number("RISK_MAX_OPEN_POSITIONS", 8, { integer: true, min: 1 }),
   };
   if (config.sessionSecret && config.sessionSecret.length < 32) r.fail("DASHBOARD_SESSION_SECRET must be at least 32 characters");
   r.done();

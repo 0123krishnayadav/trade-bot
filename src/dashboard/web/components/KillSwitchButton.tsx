@@ -14,8 +14,9 @@ export function KillSwitchButton({ active, onDone }: { active?: { activatedAt: s
   const [error, setError] = useState<string>();
 
   if (active) {
+    // Phones: the red banner on the page already says it; the header has no room to repeat it.
     return (
-      <Badge color="red" variant="filled" size="lg">
+      <Badge color="red" variant="filled" size="lg" visibleFrom="sm">
         Kill switch on since {istTime(active.activatedAt)}
       </Badge>
     );

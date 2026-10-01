@@ -1,9 +1,15 @@
-import { Alert, Badge, Button, Card, Grid, Group, SimpleGrid, Skeleton, Stack, Table, Text } from "@mantine/core";
+import { Alert, Badge, Card, Grid, Group, SimpleGrid, Skeleton, Stack, Table, Text } from "@mantine/core";
 import { useLocation } from "wouter";
 import { useCallback, useEffect, useState } from "react";
-import type { HistorySummary, PositionsResponse, StatusResponse, StrategyStatus } from "../../api/types";
+import type { HistoryResponse, HistorySummary, MarketResponse, OrdersResponse, PositionsResponse, StatusResponse, StrategyStatus } from "../../api/types";
 import { api } from "../api-client";
 import { KillSwitchButton } from "../components/KillSwitchButton";
+import { MarketStrip } from "../components/cards/MarketStrip";
+import { OrdersCard } from "../components/cards/OrdersCard";
+import { PnlChartCard } from "../components/cards/PnlChartCard";
+import { RecentTradesCard } from "../components/cards/RecentTradesCard";
+import { RiskCard } from "../components/cards/RiskCard";
+import { TradePlanCard } from "../components/cards/TradePlanCard";
 import { Layout } from "../components/Layout";
 import { inr, istDateTime, istTime, pnlColor, price } from "../format";
 
@@ -18,17 +24,21 @@ const PHASE_COLOR: Record<string, string> = {
 export function HomePage({ mode, onLoggedOut }: { mode: "paper" | "live"; onLoggedOut: () => void }) {
   const [status, setStatus] = useState<StatusResponse>();
   const [positions, setPositions] = useState<PositionsResponse>();
-  const [summary, setSummary] = useState<HistorySummary>();
+  const [history, setHistory] = useState<HistoryResponse>();
+  const [market, setMarket] = useState<MarketResponse>();
+  const [orders, setOrders] = useState<OrdersResponse>();
   const [error, setError] = useState<string>();
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [s, p, h] = await Promise.all([api.status(), api.positions(), api.historySummary()]);
+      const [s, p, h, m, o] = await Promise.all([api.status(), api.positions(), api.history(), api.market(), api.orders()]);
       setStatus(s);
       setPositions(p);
-      setSummary(h);
+      setHistory(h);
+      setMarket(m);
+      setOrders(o);
       setError(undefined);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not load status.");
@@ -41,17 +51,14 @@ export function HomePage({ mode, onLoggedOut }: { mode: "paper" | "live"; onLogg
     void load();
   }, [load]);
 
-  const actions = (
-    <>
-      {status && <KillSwitchButton active={status.killSwitch} onDone={() => void load()} />}
-      <Button variant="default" size="xs" onClick={() => void load()} loading={loading}>
-        Refresh
-      </Button>
-    </>
-  );
-
   return (
-    <Layout mode={mode} onLoggedOut={onLoggedOut} actions={actions}>
+    <Layout
+      mode={mode}
+      onLoggedOut={onLoggedOut}
+      onRefresh={() => void load()}
+      refreshing={loading}
+      actions={status && <KillSwitchButton active={status.killSwitch} onDone={() => void load()} />}
+    >
       <Stack maw={1200} mx="auto">
         {error && (
           <Alert color="red" variant="light" title="Something went wrong">
@@ -66,7 +73,7 @@ export function HomePage({ mode, onLoggedOut }: { mode: "paper" | "live"; onLogg
           </Alert>
         )}
 
-        {!status || !positions || !summary ? (
+        {!status || !positions || !history || !market || !orders ? (
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }}>
             <Skeleton h={140} />
             <Skeleton h={140} />
@@ -80,16 +87,32 @@ export function HomePage({ mode, onLoggedOut }: { mode: "paper" | "live"; onLogg
               <BrokerCard status={status} />
               <OpenPnlCard positions={positions} />
               <TodayCard status={status} />
-              <HistoryCard summary={summary} />
+              <HistoryCard summary={history.summary} />
             </SimpleGrid>
+            <MarketStrip market={market} />
             <Grid>
               <Grid.Col span={{ base: 12, md: 8 }}>
-                <PositionsCard positions={positions} />
+                <Stack>
+                  <TradePlanCard status={status} positions={positions} />
+                  <PositionsCard positions={positions} />
+                </Stack>
               </Grid.Col>
               <Grid.Col span={{ base: 12, md: 4 }}>
-                <StrategiesCard strategies={status.strategies} />
+                <Stack>
+                  <RiskCard status={status} positions={positions} />
+                  <StrategiesCard strategies={status.strategies} />
+                </Stack>
               </Grid.Col>
             </Grid>
+            <Grid>
+              <Grid.Col span={{ base: 12, md: 7 }}>
+                <PnlChartCard summary={history.summary} />
+              </Grid.Col>
+              <Grid.Col span={{ base: 12, md: 5 }}>
+                <RecentTradesCard history={history} />
+              </Grid.Col>
+            </Grid>
+            <OrdersCard orders={orders} />
             <Text size="xs" c="dimmed">
               Updated {istDateTime(status.serverTime)} IST
             </Text>

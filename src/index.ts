@@ -7,7 +7,9 @@ import { SessionStore } from "./store/session-store";
 import { InstrumentStore, refreshInstrumentsIfStale } from "./store/instrument-store";
 import { TradingStore } from "./store/trading-store";
 import { ScripStore } from "./store/scrip-store";
-import { createBrokerAdapters, downloadInstruments } from "./brokers";
+import { createBrokerAdapters, downloadHolidays, downloadInstruments } from "./brokers";
+import { MarketCalendar, refreshHolidaysIfStale } from "./calendar/market-calendar";
+import { CalendarStore } from "./store/calendar-store";
 import { PaperBroker } from "./brokers/paper/paper-broker";
 import { MarketEngine } from "./engine/market-engine";
 import { ScripRecorder } from "./engine/scrip-recorder";
@@ -60,6 +62,14 @@ async function run(config: ReturnType<typeof loadConfig>, logger: ReturnType<typ
 
   const instruments = new InstrumentStore(db, config.broker);
   await refreshInstrumentsIfStale(instruments, () => downloadInstruments(config), logger.child("instruments"));
+  // The holiday list (for the scheduler and the dashboard); a failed download never stops the bot.
+  const calendarStore = new CalendarStore(db);
+  await refreshHolidaysIfStale(
+    new MarketCalendar(calendarStore),
+    calendarStore,
+    () => downloadHolidays(config.broker, { getAccessToken: () => sessions.get(config.broker)?.accessToken, logger }),
+    logger.child("calendar"),
+  );
 
   // The token is read on every call, so logging in again while the bot runs takes effect at once.
   const adapters = createBrokerAdapters(config, {

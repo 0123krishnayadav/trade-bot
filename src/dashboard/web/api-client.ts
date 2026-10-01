@@ -1,5 +1,5 @@
 // The only place the React app talks to the server. Pages call `api.*` and get typed results.
-import type { ApiErrorBody, HistoryResponse, HistorySummary, KillSwitchResponse, LoginRequest, MeResponse, PositionsResponse, StatusResponse } from "../api/types";
+import type { ApiErrorBody, HistoryResponse, HistorySummary, KillSwitchResponse, LoginRequest, MarketResponse, MeResponse, OrdersResponse, PositionsResponse, StatusResponse } from "../api/types";
 
 export class ApiError extends Error {
   constructor(
@@ -45,6 +45,8 @@ export const api = {
   me: () => request<MeResponse>("GET", "/api/auth/me"),
   status: () => request<StatusResponse>("GET", "/api/status"),
   positions: () => request<PositionsResponse>("GET", "/api/positions"),
+  market: () => request<MarketResponse>("GET", "/api/market"),
+  orders: () => request<OrdersResponse>("GET", "/api/orders"),
   historySummary: () => request<HistorySummary>("GET", "/api/history/summary"),
   history: () => request<HistoryResponse>("GET", "/api/history"),
   killSwitch: () => request<KillSwitchResponse>("POST", "/api/kill-switch", { confirm: true }),

@@ -330,12 +330,14 @@ Read it as three layers:
    - `jsonOnly()` makes POSTs require JSON, which with `SameSite=Strict` blocks cross-site requests.
    - Endpoints:
      - `POST /api/auth/login`, `POST /api/auth/logout` and `GET /api/auth/me`
-     - `GET /api/status`, `GET /api/positions`, `GET /api/history/summary` and `GET /api/history`
+     - `GET /api/status`, `GET /api/positions`, `GET /api/market`, `GET /api/orders`, `GET /api/history/summary` and `GET /api/history`
      - `POST /api/kill-switch`
    - `api/types.ts` holds the request/response shapes, shared by the server and the page.
 3. **Services, `services/`:**
-   - `status-service` (broker session, mode, strategy phases, today's P&L, kill switch)
+   - `status-service` (broker session, mode, strategy phases and today's trade plan, today's P&L, kill switch, risk limits)
    - `positions-service` (open positions from today's fills + prices from `scrips`)
+   - `market-service` (the NIFTY price and change from `scrips`, today's session from the calendar, upcoming holidays, and the bot's heartbeat = when it last wrote a price)
+   - `orders-service` (today's orders, newest first)
    - `history-service` (closed trades, what was bought/sold, the report)
    - `kill-switch-service` (the one write)
 
@@ -352,6 +354,13 @@ Read it as three layers:
 - `api-client.ts`: **the only file that calls `fetch`**.
 - `pages/`: one file per screen.
 - `components/`: the shared header (`Layout`) and `KillSwitchButton`.
+- `components/cards/`: the overview's newer cards:
+  - `MarketStrip`
+  - `TradePlanCard`, with `MtmMeter` (live MTM between the stop and the target)
+  - `RiskCard`
+  - `PnlChartCard`: a hand-drawn SVG line chart with a crosshair tooltip, no chart library
+  - `RecentTradesCard`
+  - `OrdersCard`
 
 ---
 

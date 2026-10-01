@@ -11,6 +11,10 @@ import { HistoryService } from "../src/dashboard/services/history-service";
 import { buildReport } from "../src/reports/report";
 import { KillSwitchService, KillSwitchUnavailable } from "../src/dashboard/services/kill-switch-service";
 import { ScripStore } from "../src/store/scrip-store";
+import { CalendarStore } from "../src/store/calendar-store";
+import { InstrumentStore } from "../src/store/instrument-store";
+import { MarketService } from "../src/dashboard/services/market-service";
+import { OrdersService } from "../src/dashboard/services/orders-service";
 import type { Order } from "../src/core/types";
 import { migrate, openDatabase } from "../src/store/database";
 import { migrations } from "../src/store/migrations";
@@ -19,6 +23,7 @@ import { TradingStore } from "../src/store/trading-store";
 import { createLogger } from "../src/utils/logger";
 
 const SECRET = "x".repeat(32);
+const RISK = { maxDailyLoss: 10_000, maxOpenPositions: 8 };
 const PASSWORD = "correct-horse-battery-staple";
 const PIN = "482915";
 const quiet = createLogger({ level: "error", format: "pretty", write: () => {} });
@@ -105,19 +110,21 @@ test("status never includes the broker access token", () => {
     expiresAt: new Date("2026-10-01T22:00:00Z"),
   });
   const trading = new TradingStore(db, "paper");
-  trading.saveState("iron-butterfly", { date: "2026-10-01", phase: "done", exitReason: "TARGET", legs: [] });
+  trading.saveState("iron-butterfly", { date: "2026-10-01", phase: "done", exitReason: "TARGET", legs: [{ key: "x" }], atm: 22550, expiry: "2026-10-06", credit: 217.85, target: 5664.1, stopLoss: 5000 });
   const trade = { strategyId: "iron-butterfly", openedAt: now, closedAt: now, exitReason: "TARGET" };
   trading.saveTrade({ ...trade, tradeDate: "2026-10-01", grossPnl: 5800, charges: 220.5, netPnl: 5579.5 });
   trading.saveTrade({ ...trade, tradeDate: "2026-09-30", grossPnl: -100, charges: 200, netPnl: -300 });
   new TradingStore(db, "live").saveState("iron-butterfly", { phase: "open" });
 
-  const status = new StatusService(db, { broker: "upstox", mode: "paper", now: () => now }).status();
+  const status = new StatusService(db, { broker: "upstox", mode: "paper", risk: RISK, now: () => now }).status();
   expect(JSON.stringify(status)).not.toContain("SECRET-TOKEN");
   expect(status.broker).toEqual({ name: "upstox", loggedIn: true, userId: "AB1234", userName: "Krishna", validUntil: "2026-10-01T22:00:00.000Z" });
   expect(status.strategies).toMatchObject([{ id: "iron-butterfly", phase: "done", date: "2026-10-01", exitReason: "TARGET" }]);
+  expect(status.strategies[0]!.trade).toEqual({ atm: 22550, expiry: "2026-10-06", credit: 217.85, target: 5664.1, stopLoss: 5000 });
+  expect(status.risk).toEqual(RISK);
   expect(status.today).toEqual({ date: "2026-10-01", closedTrades: 1, grossPnl: 5800, charges: 220.5, netPnl: 5579.5 });
 
-  const later = new StatusService(db, { broker: "upstox", mode: "paper", now: () => new Date("2026-10-02T00:00:00Z") }).status();
+  const later = new StatusService(db, { broker: "upstox", mode: "paper", risk: RISK, now: () => new Date("2026-10-02T00:00:00Z") }).status();
   expect(later.broker.loggedIn).toBe(false);
   db.close();
 });
@@ -180,6 +187,73 @@ test("positions still load before the bot has created the scrips table", () => {
   db.close();
 });
 
+// ---------- Market and orders ----------
+
+test("market: index change from scrips, today's session, upcoming holidays and the bot's heartbeat", () => {
+  const db = openDatabase(":memory:");
+  migrate(db, migrations);
+  new InstrumentStore(db, "upstox").replaceAll([
+    { key: "NSE_INDEX|Nifty 50", exchange: "NSE", segment: "NSE_INDEX", kind: "index", symbol: "NIFTY", name: "Nifty 50", lotSize: 1, tickSize: 0.05 },
+  ]);
+  new ScripStore(db).saveMany([{ instrumentKey: "NSE_INDEX|Nifty 50", ltp: 22421.95, cp: 22620.45 }]);
+  new CalendarStore(db).replaceAll([
+    { date: "2026-10-02", description: "Gandhi Jayanti" },
+    { date: "2026-11-08", description: "Diwali Laxmi Pujan", session: { open: new Date("2026-11-08T12:30:00Z"), close: new Date("2026-11-08T13:40:00Z") } },
+  ]);
+  const at = (iso: string) => new MarketService(db, { broker: "upstox", underlying: "NIFTY", now: () => new Date(iso) }).market();
+
+  const m = at("2026-10-01T06:00:00Z"); // Thursday 11:30 IST
+  expect(m.index).toMatchObject({ symbol: "Nifty 50", ltp: 22421.95, cp: 22620.45, change: -198.5, changePct: -0.88 });
+  expect(m.today).toMatchObject({ date: "2026-10-01", status: "open" });
+  expect(m.nextTradingDay).toBe("2026-10-05"); // Friday is Gandhi Jayanti
+  expect(m.holidaysMissing).toBe(false);
+  expect(m.upcoming).toEqual([
+    { date: "2026-10-02", description: "Gandhi Jayanti", special: false },
+    { date: "2026-11-08", description: "Diwali Laxmi Pujan", special: true },
+  ]);
+  expect(m.pricesUpdatedAt).toBeDefined();
+  expect(at("2026-10-01T03:00:00Z").today.status).toBe("pre-open"); // 08:30 IST
+  expect(at("2026-10-01T10:30:00Z").today.status).toBe("closed"); // 16:00 IST
+  expect(at("2026-10-02T06:00:00Z").today).toMatchObject({ status: "closed", note: "Gandhi Jayanti" });
+  db.close();
+});
+
+test("market works before the bot has created its newer tables", () => {
+  const db = openDatabase(":memory:");
+  migrate(db, migrations.filter((m) => m.id < 4));
+  const m = new MarketService(db, { broker: "upstox", underlying: "NIFTY", now: () => new Date("2026-10-01T06:00:00Z") }).market();
+  expect(m).toMatchObject({ today: { status: "open" }, upcoming: [], holidaysMissing: true });
+  expect(m.index).toBeUndefined();
+  db.close();
+});
+
+test("an empty holiday list isn't trusted: no next trading day is claimed", () => {
+  const db = openDatabase(":memory:");
+  migrate(db, migrations); // table exists, nothing downloaded yet
+  const m = new MarketService(db, { broker: "upstox", underlying: "NIFTY", now: () => new Date("2026-10-01T06:00:00Z") }).market();
+  expect(m.holidaysMissing).toBe(true);
+  expect(m.nextTradingDay).toBeUndefined(); // would wrongly be Fri 2 Oct (Gandhi Jayanti) on weekdays alone
+  db.close();
+});
+
+test("today's orders, newest first; other days and modes left out", () => {
+  const db = openDatabase(":memory:");
+  migrate(db, migrations);
+  const trading = new TradingStore(db, "paper");
+  trading.saveOrder("upstox", fill("1", "NSE_FO|CE", "SELL", 65, 148.85, "2026-10-01T03:50:00Z"), "iron-butterfly");
+  trading.saveOrder("upstox", { ...fill("2", "NSE_FO|CE", "BUY", 65, 0, "2026-10-01T09:45:00Z"), status: "REJECTED", filledQuantity: 0, statusMessage: "margin" } as Order);
+  trading.saveOrder("upstox", fill("3", "NSE_FO|PE", "BUY", 65, 10, "2026-09-30T05:00:00Z"));
+  new TradingStore(db, "live").saveOrder("upstox", fill("4", "NSE_FO|PE", "BUY", 65, 10, "2026-10-01T05:00:00Z"));
+  const { orders } = new OrdersService(db, { mode: "paper", now: () => new Date("2026-10-01T10:00:00Z") }).today();
+  expect(orders.map((o) => [o.id, o.side, o.status, o.filledQuantity])).toEqual([
+    ["2", "BUY", "REJECTED", 0],
+    ["1", "SELL", "FILLED", 65],
+  ]);
+  expect(orders[0]!.statusMessage).toBe("margin");
+  expect(orders[1]!.strategyId).toBe("iron-butterfly");
+  db.close();
+});
+
 // ---------- History ----------
 
 test("history: totals, and what each trade bought and sold", () => {
@@ -231,7 +305,7 @@ test("kill switch: one row for today (first press kept), shown in the status", (
   migrate(db, migrations);
   let now = new Date("2026-10-01T06:00:00Z"); // 11:30 IST
   const service = new KillSwitchService(db, { mode: "paper", now: () => now });
-  const status = () => new StatusService(db, { broker: "upstox", mode: "paper", now: () => now }).status();
+  const status = () => new StatusService(db, { broker: "upstox", mode: "paper", risk: RISK, now: () => now }).status();
   expect(status().killSwitch).toBeUndefined();
 
   expect(service.activate()).toEqual({ tradeDate: "2026-10-01", activatedAt: "2026-10-01T06:00:00.000Z" });
@@ -249,7 +323,7 @@ test("kill switch needs the bot's table; status works without it", () => {
   const db = openDatabase(":memory:");
   migrate(db, migrations.filter((m) => m.id < 5));
   expect(() => new KillSwitchService(db, { mode: "paper" }).activate()).toThrow(KillSwitchUnavailable);
-  expect(new StatusService(db, { broker: "upstox", mode: "paper" }).status().killSwitch).toBeUndefined();
+  expect(new StatusService(db, { broker: "upstox", mode: "paper", risk: RISK }).status().killSwitch).toBeUndefined();
   db.close();
 });
 
@@ -263,6 +337,7 @@ const status: StatusResponse = {
   mode: "paper",
   broker: { name: "upstox", loggedIn: false },
   strategies: [],
+  risk: RISK,
   today: { date: "2026-10-01", closedTrades: 0, grossPnl: 0, charges: 0, netPnl: 0 },
 };
 
@@ -277,6 +352,8 @@ beforeAll(async () => {
       mode: "paper",
       status: () => status,
       positions: () => ({ positions: [], openPnl: 0, missingPrices: 0, pricesRecorded: true }),
+      market: () => ({ today: { date: "2026-10-01", status: "open" }, upcoming: [], holidaysMissing: false }),
+      orders: () => ({ orders: [] }),
       historySummary: () => history.summary,
       history: () => history,
       killSwitch: () => {

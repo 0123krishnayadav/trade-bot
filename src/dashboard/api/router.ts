@@ -4,7 +4,7 @@ import { LoginLockout } from "../auth/lockout";
 import { verifyCredentials } from "../auth/credentials";
 import { SESSION_COOKIE, SessionManager } from "../auth/session";
 import { KillSwitchUnavailable } from "../services/kill-switch-service";
-import type { ApiErrorBody, HistoryResponse, HistorySummary, KillSwitchRequest, KillSwitchResponse, LoginRequest, MeResponse, PositionsResponse, StatusResponse } from "./types";
+import type { ApiErrorBody, HistoryResponse, HistorySummary, KillSwitchRequest, KillSwitchResponse, LoginRequest, MarketResponse, MeResponse, OrdersResponse, PositionsResponse, StatusResponse } from "./types";
 
 export interface ApiDeps {
   sessions: SessionManager;
@@ -14,6 +14,8 @@ export interface ApiDeps {
   mode: "paper" | "live";
   status: () => StatusResponse;
   positions: () => PositionsResponse;
+  market: () => MarketResponse;
+  orders: () => OrdersResponse;
   historySummary: () => HistorySummary;
   history: () => HistoryResponse;
   killSwitch: () => KillSwitchResponse;
@@ -95,6 +97,8 @@ export function createApiRoutes(deps: ApiDeps) {
     "/api/auth/me": { GET: authed((_req, s) => json({ sessionExpiresAt: new Date(s.exp).toISOString(), mode: deps.mode } satisfies MeResponse)) },
     "/api/status": { GET: authed(() => json(deps.status())) },
     "/api/positions": { GET: authed(() => json(deps.positions())) },
+    "/api/market": { GET: authed(() => json(deps.market())) },
+    "/api/orders": { GET: authed(() => json(deps.orders())) },
     "/api/history/summary": { GET: authed(() => json(deps.historySummary())) },
     "/api/history": { GET: authed(() => json(deps.history())) },
     "/api/kill-switch": { POST: authed(jsonOnly(killSwitch)) },

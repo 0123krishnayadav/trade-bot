@@ -2,11 +2,12 @@ import type { Database } from "bun:sqlite";
 import { SessionStore } from "../../store/session-store";
 import { TradingStore } from "../../store/trading-store";
 import { istDate } from "../../utils/time";
-import type { StatusResponse, StrategyStatus } from "../api/types";
+import type { StatusResponse, StrategyStatus, TradePlan } from "../api/types";
 
 export interface StatusServiceOptions {
   broker: string;
   mode: "paper" | "live";
+  risk: StatusResponse["risk"];
   now?: () => Date;
 }
 
@@ -41,6 +42,7 @@ export class StatusService {
         : { name: this.opts.broker, loggedIn: false },
       strategies: this.strategies(),
       ...this.killSwitch(today),
+      risk: this.opts.risk,
       today: {
         date: today,
         closedTrades: trades.length,
@@ -72,6 +74,19 @@ export class StatusService {
         // shown as "unknown" below
       }
       const text = (v: unknown) => (typeof v === "string" ? v : undefined);
+      const num = (v: unknown) => (typeof v === "number" ? v : undefined);
+      const plan: TradePlan = {
+        atm: num(state.atm),
+        expiry: text(state.expiry),
+        spot: num(state.spot),
+        credit: num(state.credit),
+        maxProfit: num(state.maxProfit),
+        maxLoss: num(state.maxLoss),
+        target: num(state.target),
+        stopLoss: num(state.stopLoss),
+        openedAt: text(state.openedAt),
+      };
+      const defined = Object.fromEntries(Object.entries(plan).filter(([, v]) => v !== undefined)) as TradePlan;
       return {
         id: row.strategy_id,
         phase: text(state.phase) ?? "unknown",
@@ -79,6 +94,7 @@ export class StatusService {
         note: text(state.note),
         exitReason: text(state.exitReason),
         updatedAt: row.updated_at,
+        ...(Object.keys(defined).length ? { trade: defined } : {}),
       };
     });
   }

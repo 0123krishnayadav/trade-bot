@@ -11,6 +11,8 @@ import { StatusService } from "./services/status-service";
 import { PositionsService } from "./services/positions-service";
 import { HistoryService } from "./services/history-service";
 import { KillSwitchService } from "./services/kill-switch-service";
+import { MarketService } from "./services/market-service";
+import { OrdersService } from "./services/orders-service";
 import app from "./web/index.html";
 
 function main(): void {
@@ -20,7 +22,9 @@ function main(): void {
   // Read-only for everything shown; the bot creates the file and the schema.
   const db = new Database(config.dbPath, { readonly: true, strict: true });
   db.run("PRAGMA busy_timeout = 5000");
-  const status = new StatusService(db, { broker: config.broker, mode: config.mode });
+  const status = new StatusService(db, { broker: config.broker, mode: config.mode, risk: config.risk });
+  const market = new MarketService(db, { broker: config.broker, underlying: config.underlying });
+  const orders = new OrdersService(db, { mode: config.mode });
   const positions = new PositionsService(db, { mode: config.mode });
   const history = new HistoryService(db, { mode: config.mode });
   // The one write: the kill switch row. A separate connection, so everything else stays read-only.
@@ -40,6 +44,8 @@ function main(): void {
         mode: config.mode,
         status: () => status.status(),
         positions: () => positions.positions(),
+        market: () => market.market(),
+        orders: () => orders.today(),
         historySummary: () => history.summary(),
         history: () => history.history(),
         killSwitch: () => killSwitch.activate(),

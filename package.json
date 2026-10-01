@@ -18,6 +18,7 @@
     "login": "bun run src/login.ts",
     "upstox": "bun run src/brokers/upstox/cli.ts",
     "report": "bun run src/reports/cli.ts",
+    "holidays": "bun run src/calendar/cli.ts",
     "dashboard": "bun run src/dashboard/server.ts",
     "dashboard:dev": "bun --hot src/dashboard/server.ts",
     "dashboard:setup": "bun run src/dashboard/setup.ts",

@@ -39,6 +39,24 @@ export interface StrategyStatus {
   exitReason?: string;
   /** ISO time the bot last saved this state. */
   updatedAt: string;
+  /** Today's trade plan, for strategies that save one (e.g. the iron butterfly). */
+  trade?: TradePlan;
+}
+
+export interface TradePlan {
+  underlying?: string;
+  atm?: number;
+  expiry?: string;
+  /** Spot at entry. */
+  spot?: number;
+  /** Net premium per unit. */
+  credit?: number;
+  maxProfit?: number;
+  maxLoss?: number;
+  /** MTM at which the strategy takes profit / cuts the loss, in rupees. */
+  target?: number;
+  stopLoss?: number;
+  openedAt?: string;
 }
 
 export interface StatusResponse {
@@ -48,6 +66,8 @@ export interface StatusResponse {
   strategies: StrategyStatus[];
   /** Set when the kill switch is on for today. */
   killSwitch?: { activatedAt: string };
+  /** The bot's risk limits (same .env settings and defaults as the bot). */
+  risk: { maxDailyLoss: number; maxOpenPositions: number };
   today: {
     date: string;
     closedTrades: number;
@@ -129,4 +149,41 @@ export interface HistoryResponse {
   summary: HistorySummary;
   /** Newest first. */
   trades: HistoryTrade[];
+}
+
+export interface MarketResponse {
+  /** The index the strategies trade, from the bot's latest recorded price. */
+  index?: { symbol: string; ltp: number; cp: number; change: number; changePct: number; updatedAt: string };
+  today: {
+    date: string;
+    /** pre-open: a trading day before the open · open · closed: after the close, or not a trading day. */
+    status: "pre-open" | "open" | "closed";
+    session?: { open: string; close: string };
+    /** Holiday or special-session name, when today has one. */
+    note?: string;
+  };
+  nextTradingDay?: string;
+  /** True until the holiday list has been downloaded: holidays are unknown, so no next trading day is given. */
+  holidaysMissing: boolean;
+  /** The next few days the market is closed or has special hours. */
+  upcoming: { date: string; description: string; special: boolean }[];
+  /** When the bot last wrote a price; a fresh time means the bot is running and connected. */
+  pricesUpdatedAt?: string;
+}
+
+export interface TodayOrder {
+  id: string;
+  strategyId?: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  filledQuantity: number;
+  averagePrice: number;
+  status: string;
+  statusMessage?: string;
+  placedAt: string;
+}
+
+export interface OrdersResponse {
+  orders: TodayOrder[];
 }

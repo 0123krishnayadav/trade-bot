@@ -35,3 +35,25 @@ export function istDateTime(iso: string): string {
 export function pnlColor(n: number | undefined): string | undefined {
   return n === undefined || n === 0 ? undefined : n > 0 ? "teal" : "red";
 }
+
+const dayFormat = new Intl.DateTimeFormat("en-IN", { timeZone: "UTC", weekday: "short", day: "numeric", month: "short" });
+
+/** "Mon, 5 Oct" for a YYYY-MM-DD date. */
+export function dayLabel(date: string): string {
+  return dayFormat.format(new Date(`${date}T00:00:00Z`));
+}
+
+/** "5s ago", "3 min ago", "2 h ago". */
+export function ago(iso: string, now: Date = new Date()): string {
+  const s = Math.max(0, Math.round((now.getTime() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)} min ago`;
+  if (s < 86_400) return `${Math.round(s / 3600)} h ago`;
+  return `${Math.round(s / 86_400)} d ago`;
+}
+
+/** +12.30 / −4.50 with a real minus sign. */
+export function signed(n: number, digits = 2): string {
+  const text = Math.abs(n).toLocaleString("en-IN", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  return n > 0 ? `+${text}` : n < 0 ? `−${text}` : text;
+}
