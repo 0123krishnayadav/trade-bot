@@ -15,11 +15,26 @@ bun run login            # once a day: opens the Upstox login page
 
 ```bash
 bun run start            # paper trading (default): live prices, simulated fills, no real orders
-bun run dashboard        # the dashboard on http://127.0.0.1:4000 (separate process; only writes the kill switch)
+bun run dashboard        # the dashboard on http://127.0.0.1:4000 (needs a build: see below)
+bun run dashboard:dev    # while working on the page: bundles on the fly, hot reload
 bun run all              # both in one terminal; Ctrl+C stops both, the bot squares off first
 bun run scheduler        # every day: dashboard always on, bot only on trading days (08:55–15:35)
 bun run report           # win rate, expectancy, drawdown, exit reasons, per-day P&L
 ```
+
+## Build for production
+
+```bash
+bun run build            # everything into dist/: backend bundles (+ source maps) and the dashboard page
+bun run start:prod       # the scheduler from dist/ (it runs the built bot and dashboard)
+bun dist/index.js        # or any single program: dist/login.js, dist/dashboard/server.js, ...
+bun run dashboard:build  # only the dashboard page (dist/web), e.g. after changing src/dashboard/web
+```
+
+The built backend is self-contained (no `node_modules` needed); the Docker image contains only `dist/`.
+During development keep running from source (`bun run start`, `bun run dashboard:dev`).
+
+## Notes
 
 The bot runs the NIFTY iron butterfly until you press Ctrl+C; any open trade is squared off
 before it exits. Orders, completed trades and strategy state are saved in `db/trade-bot.sqlite`.

@@ -84,7 +84,8 @@ src/
   calendar/                MarketCalendar: trading days and special sessions
   alerts/notifier.ts       Telegram alerts (or just the log)
   reports/                 Win rate, expectancy, drawdown… (`bun run report` + dashboard)
-  process/child.ts         Starts a script as a child process with prefixed output
+  process/child.ts         Starts a script as a child process with prefixed output (src/*.ts or dist/*.js)
+  build.ts                 `bun run build`: backend bundles + dashboard page into dist/
 
   brokers/
     index.ts               Factory: picks the adapter from config.broker
@@ -324,7 +325,12 @@ The same report feeds `bun run report` (via `formatReport`) and the dashboard's 
 
 ### Step 13: The dashboard, `src/dashboard/` (1 hour)
 Read it as three layers:
-1. **Server, `server.ts`:** `Bun.serve` with the `/api/*` routes and `"/*"` → the React page (Bun bundles `web/index.html` itself). Two DB connections: a **read-only** one for everything shown, and a write one used only by `KillSwitchService`.
+1. **Server, `server.ts`:** `Bun.serve` with the `/api/*` routes and `"/*"` → the React page. Two DB connections: a **read-only** one for everything shown, and a write one used only by `KillSwitchService`.
+   - **Normally:** the page comes from `dist/web`, built once by `bun run build` or `bun run dashboard:build` (`build.ts`).
+     - The build is minified, uses React's production build and content-hashed file names, and writes `.br`/`.gz` copies.
+     - `static-site.ts` serves hashed `assets/*` with `Cache-Control: public, max-age=31536000, immutable`.
+     - Every other path gets `index.html` with `no-cache` + ETag (a 304 when unchanged), plus brotli/gzip when the browser accepts it.
+   - **With `--dev` (`bun run dashboard:dev`):** Bun bundles `web/index.html` on the fly, with hot reload.
 2. **API, `api/router.ts`:** each route is a small handler.
    - `authed()` checks the session cookie.
    - `jsonOnly()` makes POSTs require JSON, which with `SameSite=Strict` blocks cross-site requests.

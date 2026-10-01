@@ -11,12 +11,20 @@ export interface Child {
   kill(signal: "SIGINT" | "SIGTERM"): void;
 }
 
+/** True when this code runs from the `bun run build` output (dist/*.js) rather than from src/*.ts. */
+export const RUNNING_BUILT = import.meta.path.endsWith(".js");
+
+/** The scripts the launchers start: built files when running built, source otherwise (paths from the project root). */
+export const SCRIPTS = RUNNING_BUILT
+  ? { bot: "dist/index.js", dashboard: "dist/dashboard/server.js" }
+  : { bot: "src/index.ts", dashboard: "src/dashboard/server.ts" };
+
 const color = process.stdout.isTTY;
 export const tag = (name: string, code: number) => (color ? `\x1b[${code}m[${name}]\x1b[0m` : `[${name}]`);
 
-/** `bun run <script>` in the same terminal (so Ctrl+C reaches it directly). */
+/** `bun <script>` in the same terminal (so Ctrl+C reaches it directly). */
 export function startChild(name: string, script: string, colorCode: number): Child {
-  const proc: Subprocess<"ignore", "pipe", "pipe"> = Bun.spawn([process.execPath, "run", script], {
+  const proc: Subprocess<"ignore", "pipe", "pipe"> = Bun.spawn([process.execPath, script], {
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",

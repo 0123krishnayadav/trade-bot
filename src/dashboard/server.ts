@@ -1,5 +1,8 @@
 // Dashboard: `bun run dashboard`. A separate process from the bot that reads its database (its only
 // write is the kill switch row), so it can be started, stopped and changed while the bot is trading.
+//
+// Normally it serves the prebuilt page from dist/web (`bun run build` or `dashboard:build` first).
+// With --dev (`bun run dashboard:dev`) Bun bundles web/index.html itself, with hot reload.
 import { Database } from "bun:sqlite";
 import { ConfigError } from "../config";
 import { createLogger } from "../utils/logger";
@@ -13,10 +16,16 @@ import { HistoryService } from "./services/history-service";
 import { KillSwitchService } from "./services/kill-switch-service";
 import { MarketService } from "./services/market-service";
 import { OrdersService } from "./services/orders-service";
-import app from "./web/index.html";
+import { StaticSite, WEB_DIST_DIR } from "./static-site";
 
-function main(): void {
+/** Only used with --dev. A variable, not a literal, so `bun run build` doesn't bundle the page into the server. */
+const DEV_PAGE = "./web/index.html";
+
+async function main(): Promise<void> {
+  const dev = process.argv.includes("--dev");
   const config = loadDashboardConfig();
+  // Checked first, so a missing build fails fast with a clear message.
+  const site = dev ? undefined : new StaticSite(WEB_DIST_DIR);
   const logger = createLogger({ level: "info", format: config.appEnv === "production" ? "json" : "pretty" }).child("dashboard");
 
   // Read-only for everything shown; the bot creates the file and the schema.
@@ -52,16 +61,16 @@ function main(): void {
         logger,
       }),
       // Every other path is the React app, which does its own routing (/login, /, ...).
-      "/*": app,
+      "/*": dev ? (await import(DEV_PAGE)).default : (req: Request) => site!.serve(req),
     },
-    development: config.appEnv === "development" ? { hmr: true, console: true } : false,
+    development: dev ? { hmr: true, console: true } : false,
     error(err) {
       logger.error("request failed", { error: err.stack ?? err.message });
       return Response.json({ error: "internal error" }, { status: 500 });
     },
   });
 
-  logger.info(`dashboard running at ${server.url}`, { mode: config.mode, db: config.dbPath });
+  logger.info(`dashboard running at ${server.url}`, { mode: config.mode, db: config.dbPath, page: dev ? "dev (bundled on the fly, hot reload)" : WEB_DIST_DIR });
   if (config.host !== "127.0.0.1" && config.host !== "localhost") {
     logger.warn("dashboard is listening beyond this machine; prefer 127.0.0.1 with an SSH tunnel or Tailscale");
   }
@@ -77,7 +86,7 @@ function main(): void {
 }
 
 try {
-  main();
+  await main();
 } catch (err) {
   console.error(err instanceof ConfigError || err instanceof Error ? err.message : err);
   if (err instanceof Error && /unable to open database/i.test(err.message)) console.error("Start the bot once first; it creates the database.");

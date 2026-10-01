@@ -1,5 +1,5 @@
 # docker compose -f Docker/compose.yml up -d --build
-# Daily login on a server:  docker compose -f Docker/compose.yml exec trade-bot bun run login
+# Daily login on a server:  docker compose -f Docker/compose.yml exec trade-bot bun dist/login.js
 #   (with `ssh -L 5000:127.0.0.1:5000 -L 4000:127.0.0.1:4000 <server>` open, so the Upstox
 #    redirect and the dashboard reach the server's 127.0.0.1 from your browser)
 services:

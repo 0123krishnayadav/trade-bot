@@ -6,12 +6,12 @@
 //   it is NOT forwarded again: the bot handles only one SIGINT, and a second would kill it before
 //   it squares off. `kill <pid of this launcher>` (SIGTERM) is forwarded, once, to both.
 // - If the dashboard exits, the bot keeps running. If the bot exits, the dashboard is stopped too.
-import { startChild, tag } from "./process/child";
+import { SCRIPTS, startChild, tag } from "./process/child";
 
 const say = (msg: string) => console.log(`${tag("run-all", 33)} ${msg}`);
 
-const bot = startChild("bot", "src/index.ts", 36);
-const dashboard = startChild("dashboard", "src/dashboard/server.ts", 35);
+const bot = startChild("bot", SCRIPTS.bot, 36);
+const dashboard = startChild("dashboard", SCRIPTS.dashboard, 35);
 say(`bot pid ${bot.pid}, dashboard pid ${dashboard.pid}; Ctrl+C stops both (the bot squares off first)`);
 
 let stopping = false;

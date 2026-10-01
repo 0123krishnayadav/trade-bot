@@ -19,13 +19,14 @@
     "upstox": "bun run src/brokers/upstox/cli.ts",
     "report": "bun run src/reports/cli.ts",
     "holidays": "bun run src/calendar/cli.ts",
+    "dashboard:build": "bun run src/dashboard/build.ts",
     "dashboard": "bun run src/dashboard/server.ts",
-    "dashboard:dev": "bun --hot src/dashboard/server.ts",
+    "dashboard:dev": "bun --hot src/dashboard/server.ts --dev",
     "dashboard:setup": "bun run src/dashboard/setup.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
-    "build": "bun build src/index.ts --target bun --minify --sourcemap=linked --outdir dist",
-    "start:prod": "bun run dist/index.js"
+    "build": "bun run src/build.ts",
+    "start:prod": "bun dist/scheduler/index.js"
   },
   "dependencies": {
     "@mantine/core": "^9.6.3",

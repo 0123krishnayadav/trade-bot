@@ -5,7 +5,7 @@ import { createNotifier } from "../alerts/notifier";
 import { MarketCalendar, refreshHolidaysIfStale } from "../calendar/market-calendar";
 import { downloadHolidays } from "../brokers";
 import { ConfigError, loadConfig } from "../config";
-import { startChild, tag, type Child } from "../process/child";
+import { SCRIPTS, startChild, tag, type Child } from "../process/child";
 import { CalendarStore } from "../store/calendar-store";
 import { migrate, openDatabase } from "../store/database";
 import { migrations } from "../store/migrations";
@@ -42,7 +42,7 @@ const scheduler = new Scheduler({
       logger,
     ),
   loggedIn: () => sessions.get(config.broker) !== undefined,
-  startBot: () => startChild("bot", "src/index.ts", 36),
+  startBot: () => startChild("bot", SCRIPTS.bot, 36),
   onNewDay: () => {
     if (!config.log.fileDir) return;
     const deleted = pruneLogs(config.log.fileDir, config.logRetentionDays);
@@ -58,7 +58,7 @@ let stopping = false;
 const dashboardConfigured = Boolean(process.env.DASHBOARD_PASSWORD_HASH?.trim());
 function startDashboard(): void {
   if (!dashboardConfigured || stopping) return;
-  const child = startChild("dashboard", "src/dashboard/server.ts", 35);
+  const child = startChild("dashboard", SCRIPTS.dashboard, 35);
   dashboard = child;
   void child.exited.then((code) => {
     dashboard = undefined;
