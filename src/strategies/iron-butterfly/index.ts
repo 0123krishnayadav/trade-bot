@@ -50,7 +50,7 @@ export const DEFAULT_IRON_BUTTERFLY: IronButterflyConfig = {
   squareOffOnStop: true,
 };
 
-type ExitReason = "TARGET" | "STOP_LOSS" | "TIME_EXIT" | "SHUTDOWN" | "ENTRY_FAILED";
+type ExitReason = "TARGET" | "STOP_LOSS" | "TIME_EXIT" | "SHUTDOWN" | "ENTRY_FAILED" | "KILL_SWITCH";
 
 /** One option leg. Fills are accumulated, so partial fills and retries are exact. */
 export interface Leg {
@@ -166,6 +166,26 @@ export class IronButterfly implements Strategy {
     if (!this.state || !["entering", "open", "exiting"].includes(this.state.phase)) return;
     if (this.cfg.squareOffOnStop) await this.exitTrade(ctx, this.state.exitReason ?? "SHUTDOWN");
     else ctx.log.warn("stopping with an open trade (squareOffOnStop is off); it resumes on the next start");
+  }
+
+  /** Kill switch: exit now if a trade is on; either way, no (new) trade today. */
+  async squareOff(ctx: StrategyContext): Promise<void> {
+    // A finished day's state rolls over first, so "no trade today" is marked on today.
+    const today = istDate(ctx.now());
+    if (this.state.date !== today && !["entering", "open", "exiting"].includes(this.state.phase)) {
+      this.state = { date: today, phase: "idle", legs: [] };
+    }
+    switch (this.state.phase) {
+      case "entering":
+      case "open":
+      case "exiting": // keeps the original exit reason if an exit was already under way
+        ctx.log.warn("kill switch: squaring off", { phase: this.state.phase });
+        return this.exitTrade(ctx, "KILL_SWITCH");
+      case "idle":
+        return this.finishDay(ctx, "kill switch");
+      default:
+        ctx.log.info("kill switch: nothing open");
+    }
   }
 
   // ---------- Rules ----------

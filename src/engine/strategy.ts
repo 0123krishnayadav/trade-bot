@@ -35,6 +35,11 @@ export interface Strategy {
   onClock?(now: Date, ctx: StrategyContext): Promise<void> | void;
   /** On shutdown: square off or save state. */
   stop?(ctx: StrategyContext): Promise<void> | void;
+  /**
+   * Kill switch: exit every open position now and make no new trades for the rest of the day
+   * (also after a restart). Runs in the strategy's event queue like any other event.
+   */
+  squareOff?(ctx: StrategyContext): Promise<void> | void;
 }
 
 /** Everything a strategy may use. Orders are tagged with the strategy id automatically. */

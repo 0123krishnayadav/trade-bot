@@ -98,4 +98,28 @@ export const migrations: Migration[] = [
       PRIMARY KEY (mode, strategy_id)
     );`,
   },
+  {
+    id: 4,
+    name: "scrips",
+    // Latest price per instrument, written by the bot from live ticks; read by the dashboard.
+    up: `CREATE TABLE scrips (
+      instrument_key TEXT PRIMARY KEY,
+      ltp REAL NOT NULL,
+      -- previous day's close
+      cp REAL NOT NULL,
+      updated_at TEXT NOT NULL
+    );`,
+  },
+  {
+    id: 5,
+    name: "kill switch",
+    // One row per IST trading day the kill switch was pressed; it holds for that day only.
+    up: `CREATE TABLE kill_switch (
+      mode TEXT NOT NULL,
+      trade_date TEXT NOT NULL,
+      activated_at TEXT NOT NULL,
+      source TEXT NOT NULL,
+      PRIMARY KEY (mode, trade_date)
+    );`,
+  },
 ];

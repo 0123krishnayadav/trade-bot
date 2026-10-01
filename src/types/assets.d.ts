@@ -3,3 +3,6 @@ declare module "*.proto" {
   const content: string;
   export default content;
 }
+
+// Stylesheets imported for their side effect; Bun bundles them into the page.
+declare module "*.css";

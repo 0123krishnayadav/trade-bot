@@ -1,6 +1,7 @@
 import { FINAL_ORDER_STATUSES, type Broker, type InstrumentLookup, type Order, type RunMode, type Tick } from "../core/types";
 import type { TradingStore } from "../store/trading-store";
 import type { Logger } from "../utils/logger";
+import { istDate } from "../utils/time";
 import type { MarketEngine } from "./market-engine";
 import type { Strategy, StrategyContext } from "./strategy";
 
@@ -30,6 +31,9 @@ export class StrategyEngine {
   /** Updates for orders not yet known to belong to a strategy (a fill can beat placeOrder's result). */
   private readonly unrouted = new Map<string, Order>();
   private clock?: ReturnType<typeof setInterval>;
+  /** IST date the kill switch was last carried out, so it runs once per day. */
+  private killedOn?: string;
+  private killCheckFailed = false;
   readonly now: () => Date;
 
   constructor(readonly opts: StrategyEngineOptions) {
@@ -46,12 +50,40 @@ export class StrategyEngine {
   async start(): Promise<void> {
     await this.opts.broker.start();
     for (const runner of this.runners) await runner.start();
+    this.checkKillSwitch(this.now()); // pressed earlier today, before a restart
     this.clock ??= setInterval(() => this.tick(this.now()), this.opts.clockIntervalMs ?? 1000);
   }
 
   /** Sends a clock event to every strategy. Runs every second after start(); exposed for tests. */
   tick(now: Date): void {
+    this.checkKillSwitch(now);
     for (const runner of this.runners) runner.clock(now);
+  }
+
+  /**
+   * The kill switch check, once per clock tick: a primary-key lookup in the local database (the
+   * dashboard's button writes the row). When today's row appears, every strategy squares off, once.
+   */
+  private checkKillSwitch(now: Date): void {
+    const today = istDate(now);
+    if (this.killedOn === today) return;
+    let pressed: { activatedAt: Date; source: string } | undefined;
+    try {
+      pressed = this.opts.store.killSwitch(today);
+      this.killCheckFailed = false;
+    } catch (err) {
+      if (!this.killCheckFailed) this.opts.logger.error("could not check the kill switch", { error: String(err) });
+      this.killCheckFailed = true;
+      return;
+    }
+    if (!pressed) return;
+    this.killedOn = today;
+    this.opts.logger.warn("KILL SWITCH is on for today", { activatedAt: pressed.activatedAt.toISOString(), source: pressed.source });
+    void this.killSwitch().then((results) => {
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length) this.opts.logger.error("kill switch: some strategies did not square off; check the broker", { failed });
+      else this.opts.logger.warn("kill switch: every strategy squared off; no new trades today");
+    });
   }
 
   /** Lets each strategy finish its queued events and run stop() (e.g. square off), then detaches it. */
@@ -59,6 +91,15 @@ export class StrategyEngine {
     clearInterval(this.clock);
     this.clock = undefined;
     for (const runner of this.runners) await runner.stop();
+  }
+
+  /**
+   * Kill switch: every strategy squares off and stops trading for the day. Resolves once each one
+   * has made its attempt; an exit that didn't fully fill is retried by the strategy as usual.
+   */
+  async killSwitch(): Promise<KillSwitchResult[]> {
+    this.opts.logger.warn("KILL SWITCH: squaring off every strategy");
+    return Promise.all(this.runners.map((r) => r.squareOff()));
   }
 
   /** Records that `runner` placed these orders and delivers any updates that arrived first. */
@@ -84,6 +125,12 @@ export class StrategyEngine {
     this.orderOwners.set(order.id, owner);
     owner.orderUpdated(order);
   }
+}
+
+export interface KillSwitchResult {
+  strategyId: string;
+  ok: boolean;
+  error?: string;
 }
 
 /** One strategy's context, event queue and bookkeeping. */
@@ -193,6 +240,27 @@ class StrategyRunner {
     for (const off of this.detach) off();
     this.engine.opts.market.unsubscribe(this.strategy.id);
     this.log.info("stopped");
+  }
+
+  /** Queued behind any event in progress (e.g. an entry), so it never runs alongside one. */
+  squareOff(): Promise<KillSwitchResult> {
+    const strategyId = this.strategy.id;
+    if (this.stopped) return Promise.resolve({ strategyId, ok: false, error: "already stopped" });
+    if (!this.strategy.squareOff) {
+      this.log.error("kill switch: this strategy has no squareOff(); it keeps running");
+      return Promise.resolve({ strategyId, ok: false, error: "kill switch not supported by this strategy" });
+    }
+    return new Promise((resolve) => {
+      this.enqueue(async () => {
+        try {
+          await this.strategy.squareOff!(this.ctx);
+          resolve({ strategyId, ok: true });
+        } catch (err) {
+          resolve({ strategyId, ok: false, error: err instanceof Error ? err.message : String(err) });
+          throw err; // logged by enqueue
+        }
+      });
+    });
   }
 
   private queueTick(tick: Tick): void {

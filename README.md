@@ -15,10 +15,15 @@ bun run login            # once a day: opens the Upstox login page
 
 ```bash
 bun run start            # paper trading (default): live prices, simulated fills, no real orders
+bun run dashboard        # the dashboard on http://127.0.0.1:4000 (separate process, read-only)
+bun run all              # both in one terminal; Ctrl+C stops both, the bot squares off first
 ```
 
 The bot runs the NIFTY iron butterfly until you press Ctrl+C; any open trade is squared off
 before it exits. Orders, completed trades and strategy state are saved in `db/trade-bot.sqlite`.
+
+The dashboard needs a one-time `bun run dashboard:setup` (password and PIN; it prints the
+`DASHBOARD_*` lines for `.env`).
 
 Live trading places **real orders** and needs two settings in `.env`:
 

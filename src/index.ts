@@ -6,9 +6,11 @@ import { migrations } from "./store/migrations";
 import { SessionStore } from "./store/session-store";
 import { InstrumentStore, refreshInstrumentsIfStale } from "./store/instrument-store";
 import { TradingStore } from "./store/trading-store";
+import { ScripStore } from "./store/scrip-store";
 import { createBrokerAdapters, downloadInstruments } from "./brokers";
 import { PaperBroker } from "./brokers/paper/paper-broker";
 import { MarketEngine } from "./engine/market-engine";
+import { ScripRecorder } from "./engine/scrip-recorder";
 import { StrategyEngine } from "./engine/strategy-engine";
 import { DEFAULT_IRON_BUTTERFLY, IronButterfly } from "./strategies/iron-butterfly";
 
@@ -58,6 +60,9 @@ async function run(config: ReturnType<typeof loadConfig>, logger: ReturnType<typ
   });
   const market = new MarketEngine(adapters.marketData, { logger: logger.child("market") });
   await market.start();
+  // Latest prices go to the scrips table for the dashboard's live P&L.
+  const scrips = new ScripRecorder(market, new ScripStore(db), { logger: logger.child("scrips") });
+  scrips.start();
   const broker = mode === "live" ? adapters.broker : new PaperBroker(market, instruments, { capital: config.trading.capital, logger: logger.child("paper") });
 
   const engine = new StrategyEngine({
@@ -79,6 +84,7 @@ async function run(config: ReturnType<typeof loadConfig>, logger: ReturnType<typ
 
   logger.info("shutting down");
   await engine.stop();
+  scrips.stop();
   broker.close();
   if (broker !== adapters.broker) adapters.broker.close();
   market.stop();

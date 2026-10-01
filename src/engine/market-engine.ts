@@ -35,6 +35,7 @@ export class MarketEngine {
   private readonly subscribedMode = new Map<string, SubscriptionMode>();
   private readonly lastTicks = new Map<string, Tick>();
   private readonly tickHandlers = new Map<string, Set<(tick: Tick) => void>>();
+  private readonly anyTickHandlers = new Set<(tick: Tick) => void>();
   private readonly series = new Map<string, CandleSeries>();
   /** instrumentKey -> its candle series, one per timeframe */
   private readonly seriesByKey = new Map<string, CandleSeries[]>();
@@ -113,6 +114,12 @@ export class MarketEngine {
     return addHandler(this.tickHandlers, instrumentKey, handler);
   }
 
+  /** Every tick of every subscribed instrument, e.g. to record prices. */
+  onAnyTick(handler: (tick: Tick) => void): Unsubscribe {
+    this.anyTickHandlers.add(handler);
+    return () => this.anyTickHandlers.delete(handler);
+  }
+
   // ---------- Candles ----------
 
   /**
@@ -151,6 +158,7 @@ export class MarketEngine {
       for (const candle of series.applyTick(tick)) this.emitCandle(candle);
     }
     for (const handler of this.tickHandlers.get(tick.instrumentKey) ?? []) this.safely("tick handler", () => handler(tick));
+    for (const handler of this.anyTickHandlers) this.safely("tick handler", () => handler(tick));
   }
 
   private emitCandle(candle: Candle): void {

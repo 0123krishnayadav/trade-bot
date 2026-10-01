@@ -1,0 +1,9 @@
+body {
+  margin: 0;
+  background: #101113;
+}
+
+/* Digits of equal width, so changing prices and P&L don't shift sideways. */
+.num {
+  font-variant-numeric: tabular-nums;
+}

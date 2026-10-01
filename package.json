@@ -4,22 +4,34 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/bun": "1.4.2"
+    "@types/bun": "1.4.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0"
   },
   "peerDependencies": {
     "typescript": "^7"
   },
   "scripts": {
     "start": "bun run src/index.ts",
+    "all": "bun run src/run-all.ts",
     "login": "bun run src/login.ts",
     "upstox": "bun run src/brokers/upstox/cli.ts",
+    "dashboard": "bun run src/dashboard/server.ts",
+    "dashboard:dev": "bun --hot src/dashboard/server.ts",
+    "dashboard:setup": "bun run src/dashboard/setup.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit",
     "build": "bun build src/index.ts --target bun --minify --sourcemap=linked --outdir dist",
     "start:prod": "bun run dist/index.js"
   },
   "dependencies": {
+    "@mantine/core": "^9.6.3",
+    "@mantine/hooks": "^9.6.3",
+    "@mantine/notifications": "^9.6.3",
     "dayjs": "^1.11.23",
-    "protobufjs": "^8.8.0"
+    "protobufjs": "^8.8.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "wouter": "^3.13.0"
   }
 }

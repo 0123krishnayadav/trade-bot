@@ -222,3 +222,59 @@ test("doesn't enter on yesterday's price (sent by the broker on connect)", async
   await settle();
   expect(await h.broker.getOrders()).toHaveLength(4);
 });
+
+// ---------- Kill switch ----------
+// The dashboard's button writes a row; the engine checks for today's row on every clock tick.
+
+test("kill switch row: the next clock tick squares off the open trade (shorts first) and blocks new trades", async () => {
+  const h = await entered();
+  h.store.activateKillSwitch("2026-10-05", "test");
+  await h.clock("10:00");
+  await settle();
+  expect((await orderLog(h)).slice(4)).toEqual(["BUY 22700 CE FILLED", "BUY 22700 PE FILLED", "SELL 23100 CE FILLED", "SELL 22300 PE FILLED"]);
+  expect((await h.broker.getPositions()).every((p) => p.quantity === 0)).toBe(true);
+  expect(h.store.trades("iron-butterfly")[0]!.exitReason).toBe("KILL_SWITCH");
+  expect(h.store.loadState<{ phase: string }>("iron-butterfly")!.phase).toBe("done");
+  expect(h.logs.filter((l) => l.includes("KILL SWITCH is on for today"))).toHaveLength(1);
+  await h.clock("10:01"); // carried out once, not on every tick
+  expect(h.logs.filter((l) => l.includes("KILL SWITCH is on for today"))).toHaveLength(1);
+  expect(await h.broker.getOrders()).toHaveLength(8);
+});
+
+test("kill switch pressed before the bot starts (or before a restart): no trade that day", async () => {
+  const h = tradingHarness();
+  h.store.activateKillSwitch("2026-10-05", "test");
+  h.at("09:15");
+  await h.add(new IronButterfly(cfg)); // start() checks the switch
+  expect(h.store.loadState("iron-butterfly")).toMatchObject({ date: "2026-10-05", phase: "done", note: "kill switch" });
+  h.prices(ENTRY);
+  await h.clock("09:20");
+  expect(await h.broker.getOrders()).toHaveLength(0);
+});
+
+test("kill switch holds for one day only: yesterday's row doesn't stop today's trade", async () => {
+  const db = openDatabase(":memory:");
+  migrate(db, migrations);
+  new TradingStore(db, "paper").activateKillSwitch("2026-10-02", "test");
+  new TradingStore(db, "live").activateKillSwitch("2026-10-05", "test"); // other mode: ignored
+  const h = tradingHarness({ db });
+  h.at("09:15");
+  await h.add(new IronButterfly(cfg));
+  h.prices(ENTRY);
+  await h.clock("09:20");
+  expect(await h.broker.getOrders()).toHaveLength(4);
+});
+
+test("kill switch when the saved state is from yesterday still marks today as done", async () => {
+  const db = openDatabase(":memory:");
+  migrate(db, migrations);
+  new TradingStore(db, "paper").saveState("iron-butterfly", { date: "2026-10-02", phase: "done", legs: [] });
+  const h = tradingHarness({ db });
+  h.at("09:00");
+  await h.add(new IronButterfly(cfg));
+  expect(await h.engine.killSwitch()).toEqual([{ strategyId: "iron-butterfly", ok: true }]);
+  expect(h.store.loadState("iron-butterfly")).toMatchObject({ date: "2026-10-05", phase: "done" });
+  h.prices(ENTRY);
+  await h.clock("09:20");
+  expect(await h.broker.getOrders()).toHaveLength(0);
+});

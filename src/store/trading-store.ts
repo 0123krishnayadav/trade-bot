@@ -109,6 +109,28 @@ export class TradingStore {
     }));
   }
 
+  /**
+   * Turns the kill switch on for one IST trading day (YYYY-MM-DD). Pressing it again that day
+   * keeps the first time. Returns when it was activated.
+   */
+  activateKillSwitch(tradeDate: string, source: string, at: Date = new Date()): Date {
+    this.db
+      .query(
+        `INSERT INTO kill_switch (mode, trade_date, activated_at, source) VALUES ($mode, $tradeDate, $activatedAt, $source)
+         ON CONFLICT (mode, trade_date) DO NOTHING`,
+      )
+      .run({ mode: this.mode, tradeDate, activatedAt: at.toISOString(), source });
+    return this.killSwitch(tradeDate)!.activatedAt;
+  }
+
+  /** The kill switch for that IST day, if it was pressed. */
+  killSwitch(tradeDate: string): { activatedAt: Date; source: string } | undefined {
+    const row = this.db
+      .query("SELECT activated_at, source FROM kill_switch WHERE mode = $mode AND trade_date = $tradeDate")
+      .get({ mode: this.mode, tradeDate }) as { activated_at: string; source: string } | null;
+    return row ? { activatedAt: new Date(row.activated_at), source: row.source } : undefined;
+  }
+
   /** A strategy's saved state (e.g. its open legs), so a restart can pick up where it left off. */
   loadState<T>(strategyId: string): T | undefined {
     const row = this.db
