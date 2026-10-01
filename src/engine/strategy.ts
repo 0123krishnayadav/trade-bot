@@ -49,6 +49,8 @@ export interface StrategyContext {
   readonly instruments: InstrumentLookup;
   readonly log: Logger;
   now(): Date;
+  /** Sends an alert to the user (Telegram, if set up), prefixed with the strategy id. */
+  notify(text: string): void;
 
   // Market data
   subscribe(instrumentKeys: string[], mode?: SubscriptionMode): void;

@@ -67,8 +67,10 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 
 ## Phase 3: Trading core
 
-- [ ] **15. Market calendar.** Trading hours and NSE holidays (from Upstox), weekly expiry
+- [x] **15. Market calendar.** Trading hours and NSE holidays (from Upstox), weekly expiry
       resolution including holiday shifts.
+      *(Holidays and special sessions from `/v2/market/holidays`, cached weekly. Expiries come
+      from the instrument master, which already has the holiday-shifted dates.)*
 - [x] **16. Charges calculator.** Brokerage, STT, exchange, SEBI, stamp duty, GST for F&O,
       checked against Upstox's brokerage API.
       *(Checked against Upstox's brokerage API on 2026-09-30; tests/charges.test.ts pins the results.)*
@@ -81,8 +83,10 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
       isolation; clean shutdown that squares off.
 - [ ] **19. Order manager.** Multi-leg (basket) execution: hedges first, wait for fill
       confirmation, handle rejections and partial fills, retry and unwind safely.
-- [ ] **20. Risk manager.** Per-trade stop, daily max loss, max open positions, max lots,
+- [x] **20. Risk manager.** Per-trade stop, daily max loss, max open positions, max lots,
       kill switch (square off everything and stop trading for the day).
+      *(Per-trade stop is in the strategy. The kill switch is a row in `kill_switch`, written
+      by the dashboard button or by the daily loss limit.)*
 
 ## Phase 4: Strategy and testing
 
@@ -91,21 +95,29 @@ Upstox API ──▶ brokers/upstox ──▶ MarketData ──▶ engine ──
 - [ ] **22. Backtester.** Replay historical candles through the same engine and strategy.
       Needs historical data for expired option contracts (check what our Upstox plan
       provides; otherwise a data vendor).
-- [ ] **23. Reports.** Win rate, average win/loss, expectancy after costs, max drawdown, exit
+- [x] **23. Reports.** Win rate, average win/loss, expectancy after costs, max drawdown, exit
       reasons, per-day P&L.
+      *(`bun run report`, and the dashboard's History page.)*
 - [ ] **24. Paper forward test.** Run on live data with the paper broker for 2–4 weeks and
       review reports.
 
 ## Phase 5: Operations and going live
 
-- [ ] **25. Daily scheduler.** Pre-market checks (token valid, instruments refreshed), start at
+- [x] **25. Daily scheduler.** Pre-market checks (token valid, instruments refreshed), start at
       market open, stop after close, one process that runs every trading day.
-- [ ] **26. Alerts.** Telegram (or similar) messages for entries, exits, errors, kill switch
+      *(`bun run scheduler`. The daily Upstox login still needs you: it alerts at 08:30.)*
+- [x] **26. Alerts.** Telegram (or similar) messages for entries, exits, errors, kill switch
       and daily summary.
-- [ ] **27. Dashboard.** Small `Bun.serve` page: open positions, live MTM, today's trades,
+      *(Set `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`; without them alerts go to the log.)*
+- [x] **27. Dashboard.** Small `Bun.serve` page: open positions, live MTM, today's trades,
       manual kill-switch button.
+      *(React + Mantine, password + PIN login. Live MTM from the `scrips` table; refreshes on
+      demand.)*
 - [ ] **28. Deployment.** Docker image on an India-region VPS; persistent volume for SQLite;
       restarts; log retention. Check SEBI's retail algo rules and Upstox's current requirements
       (e.g. static IP registration for API orders) before going live.
+      *(Done here: `Docker/compose.yml` runs the scheduler with volumes, restarts and a 90s
+      stop grace; logs older than `LOG_RETENTION_DAYS` are deleted. Still to do (you): the VPS
+      itself and the SEBI/Upstox checks.)*
 - [ ] **29. Go live, small.** 1 lot, real orders, all risk limits on, watched closely. Scale
       only after the live results match the paper results.

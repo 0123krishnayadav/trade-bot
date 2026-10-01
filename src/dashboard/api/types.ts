@@ -1,3 +1,5 @@
+import type { Report } from "../../reports/report";
+
 // Request and response shapes of the dashboard API, shared by the server and the React app.
 
 export interface LoginRequest {
@@ -97,18 +99,8 @@ export interface KillSwitchResponse {
   activatedAt: string;
 }
 
-export interface HistorySummary {
-  trades: number;
-  wins: number;
-  losses: number;
-  /** Percent of trades with a positive net P&L; 0 when there are none. */
-  winRate: number;
-  grossPnl: number;
-  charges: number;
-  netPnl: number;
-  /** IST date of the first trade, YYYY-MM-DD. */
-  since?: string;
-}
+/** Win rate, expectancy, drawdown, exit reasons and per-day P&L of all closed trades. */
+export type HistorySummary = Report;
 
 /** Everything bought (or sold) of one instrument in a trade. */
 export interface TradeFill {

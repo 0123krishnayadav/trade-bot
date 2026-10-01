@@ -11,6 +11,9 @@ test("uses defaults for everything except the Upstox app keys", () => {
     broker: "upstox",
     upstox: { apiKey: "key", apiSecret: "secret", redirectUri: "http://127.0.0.1:5000/callback" },
     trading: { mode: "paper", capital: 500_000 },
+    risk: { maxDailyLoss: 10_000, maxLotsPerOrder: 10, maxOpenPositions: 8 }, // daily loss: 2% of capital
+    alerts: {},
+    logRetentionDays: 30,
     ironButterfly: { lots: 1, wingDistance: 400, stopLossPctOfCapital: 1, targetPctOfMaxProfit: 40, minDaysToExpiry: 0, skipDates: [] },
   });
 });
@@ -22,6 +25,13 @@ test("reads values from the environment and trims them", () => {
   expect(loadConfig({ ...UPSTOX, LOG_TO_FILE: "false" }).log.fileDir).toBeUndefined();
   expect(loadConfig({ ...UPSTOX, LOG_DIR: "/var/log/bot" }).log.fileDir).toBe("/var/log/bot");
   expect(config.db.path).toBe("/data/bot.sqlite");
+});
+
+test("risk limits and Telegram alerts", () => {
+  const config = loadConfig({ ...UPSTOX, CAPITAL: "200000", RISK_MAX_OPEN_POSITIONS: "4", TELEGRAM_BOT_TOKEN: "t", TELEGRAM_CHAT_ID: "42" });
+  expect(config.risk).toEqual({ maxDailyLoss: 4_000, maxLotsPerOrder: 10, maxOpenPositions: 4 });
+  expect(config.alerts).toEqual({ telegram: { botToken: "t", chatId: "42" } });
+  expect(problems({ ...UPSTOX, TELEGRAM_BOT_TOKEN: "t" })).toEqual(["set both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID for alerts, or neither"]);
 });
 
 test("treats empty values as unset", () => {

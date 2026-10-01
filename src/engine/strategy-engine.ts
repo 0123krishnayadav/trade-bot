@@ -1,5 +1,6 @@
 import { FINAL_ORDER_STATUSES, type Broker, type InstrumentLookup, type Order, type RunMode, type Tick } from "../core/types";
 import type { TradingStore } from "../store/trading-store";
+import type { Notifier } from "../alerts/notifier";
 import type { Logger } from "../utils/logger";
 import { istDate } from "../utils/time";
 import type { MarketEngine } from "./market-engine";
@@ -12,6 +13,8 @@ export interface StrategyEngineOptions {
   store: TradingStore;
   mode: RunMode;
   logger: Logger;
+  /** Alerts for entries, exits, the kill switch and errors; none when omitted. */
+  notifier?: Notifier;
   now?: () => Date;
   clockIntervalMs?: number;
   /** Longest a strategy's stop() may take on shutdown. */
@@ -79,10 +82,13 @@ export class StrategyEngine {
     if (!pressed) return;
     this.killedOn = today;
     this.opts.logger.warn("KILL SWITCH is on for today", { activatedAt: pressed.activatedAt.toISOString(), source: pressed.source });
+    this.opts.notifier?.notify(`🛑 Kill switch on (${pressed.source}): squaring off, no new trades today`);
     void this.killSwitch().then((results) => {
       const failed = results.filter((r) => !r.ok);
-      if (failed.length) this.opts.logger.error("kill switch: some strategies did not square off; check the broker", { failed });
-      else this.opts.logger.warn("kill switch: every strategy squared off; no new trades today");
+      if (failed.length) {
+        this.opts.logger.error("kill switch: some strategies did not square off; check the broker", { failed });
+        this.opts.notifier?.notify(`⚠️ Kill switch: ${failed.map((f) => f.strategyId).join(", ")} did not square off. Check the broker!`);
+      } else this.opts.logger.warn("kill switch: every strategy squared off; no new trades today");
     });
   }
 
@@ -161,6 +167,7 @@ class StrategyRunner {
       instruments,
       log: this.log,
       now: () => engine.now(),
+      notify: (text) => engine.opts.notifier?.notify(`${id}: ${text}`),
       subscribe: (keys, subMode) => {
         market.subscribe(id, keys, subMode);
         for (const key of keys) {
@@ -281,6 +288,7 @@ class StrategyRunner {
         await handler();
       } catch (err) {
         this.log.error("strategy handler failed", { error: err instanceof Error ? (err.stack ?? err.message) : String(err) });
+        this.engine.opts.notifier?.notify(`⚠️ ${this.strategy.id} error: ${err instanceof Error ? err.message : String(err)}`);
       }
     });
   }

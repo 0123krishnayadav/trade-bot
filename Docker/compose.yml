@@ -1,0 +1,21 @@
+# docker compose -f Docker/compose.yml up -d --build
+# Daily login on a server:  docker compose -f Docker/compose.yml exec trade-bot bun run login
+#   (with `ssh -L 5000:127.0.0.1:5000 -L 4000:127.0.0.1:4000 <server>` open, so the Upstox
+#    redirect and the dashboard reach the server's 127.0.0.1 from your browser)
+services:
+  trade-bot:
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
+    image: trade-bot
+    restart: unless-stopped
+    # Linux host networking: the dashboard (4000) and login callback (5000) listen on the
+    # server's 127.0.0.1 only, reachable through an SSH tunnel, never from the internet.
+    network_mode: host
+    env_file: ../.env
+    volumes:
+      - ../db:/app/db
+      - ../logs:/app/logs
+    # On stop, the bot squares off open positions before exiting; give it time.
+    stop_signal: SIGTERM
+    stop_grace_period: 90s

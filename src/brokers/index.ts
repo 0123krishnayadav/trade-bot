@@ -1,8 +1,8 @@
 // Picks the adapter for config.broker. The only place that knows which brokers exist.
-import type { Broker, BrokerLogin, Instrument, InstrumentLookup, MarketData } from "../core/types";
+import type { Broker, BrokerLogin, Instrument, InstrumentLookup, MarketData, MarketHoliday } from "../core/types";
 import type { Logger } from "../utils/logger";
-import type { Config } from "../config";
-import { createUpstoxAdapters, createUpstoxLogin } from "./upstox";
+import type { BrokerName, Config } from "../config";
+import { createUpstoxAdapters, createUpstoxLogin, fetchUpstoxHolidays } from "./upstox";
 import { downloadUpstoxInstruments } from "./upstox/instruments";
 
 export function createBrokerLogin(config: Config): BrokerLogin {
@@ -44,6 +44,18 @@ export function createBrokerAdapters(
     default: {
       const unknown: never = config.broker;
       throw new Error(`No adapters for broker "${unknown}"`);
+    }
+  }
+}
+
+/** This year's market holidays and special sessions from `broker`. Needs a logged-in session. */
+export function downloadHolidays(broker: BrokerName, deps: { getAccessToken: () => string | undefined; logger?: Logger }): Promise<MarketHoliday[]> {
+  switch (broker) {
+    case "upstox":
+      return fetchUpstoxHolidays(deps);
+    default: {
+      const unknown: never = broker;
+      throw new Error(`No holiday calendar for broker "${unknown}"`);
     }
   }
 }

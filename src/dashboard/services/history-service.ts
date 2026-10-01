@@ -1,4 +1,6 @@
 import type { Database } from "bun:sqlite";
+import { buildReport } from "../../reports/report";
+import { TradingStore } from "../../store/trading-store";
 import type { HistoryResponse, HistorySummary, HistoryTrade, TradeFill } from "../api/types";
 
 interface TradeRow {
@@ -31,23 +33,7 @@ export class HistoryService {
   ) {}
 
   summary(): HistorySummary {
-    const row = this.db
-      .query(
-        `SELECT COUNT(*) AS trades, COALESCE(SUM(net_pnl > 0), 0) AS wins, COALESCE(SUM(gross_pnl), 0) AS gross,
-           COALESCE(SUM(charges), 0) AS charges, COALESCE(SUM(net_pnl), 0) AS net, MIN(trade_date) AS since
-         FROM strategy_trades WHERE mode = $mode`,
-      )
-      .get({ mode: this.opts.mode }) as { trades: number; wins: number; gross: number; charges: number; net: number; since: string | null };
-    return {
-      trades: row.trades,
-      wins: row.wins,
-      losses: row.trades - row.wins,
-      winRate: row.trades ? round2((row.wins / row.trades) * 100) : 0,
-      grossPnl: round2(row.gross),
-      charges: round2(row.charges),
-      netPnl: round2(row.net),
-      ...(row.since ? { since: row.since } : {}),
-    };
+    return buildReport(new TradingStore(this.db, this.opts.mode).trades());
   }
 
   history(): HistoryResponse {

@@ -14,8 +14,10 @@
   "scripts": {
     "start": "bun run src/index.ts",
     "all": "bun run src/run-all.ts",
+    "scheduler": "bun run src/scheduler/index.ts",
     "login": "bun run src/login.ts",
     "upstox": "bun run src/brokers/upstox/cli.ts",
+    "report": "bun run src/reports/cli.ts",
     "dashboard": "bun run src/dashboard/server.ts",
     "dashboard:dev": "bun --hot src/dashboard/server.ts",
     "dashboard:setup": "bun run src/dashboard/setup.ts",

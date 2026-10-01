@@ -8,6 +8,7 @@ import { loadDashboardConfig } from "../src/dashboard/config";
 import { StatusService } from "../src/dashboard/services/status-service";
 import { PositionsService } from "../src/dashboard/services/positions-service";
 import { HistoryService } from "../src/dashboard/services/history-service";
+import { buildReport } from "../src/reports/report";
 import { KillSwitchService, KillSwitchUnavailable } from "../src/dashboard/services/kill-switch-service";
 import { ScripStore } from "../src/store/scrip-store";
 import type { Order } from "../src/core/types";
@@ -212,7 +213,7 @@ test("history: totals, and what each trade bought and sold", () => {
   new TradingStore(db, "live").saveTrade({ strategyId: "x", tradeDate: "2026-09-30", openedAt: new Date(), closedAt: new Date(), exitReason: "TARGET", grossPnl: 9, charges: 0, netPnl: 9 });
 
   const res = new HistoryService(db, { mode: "paper" }).history();
-  expect(res.summary).toEqual({ trades: 2, wins: 1, losses: 1, winRate: 50, grossPnl: 805, charges: 200, netPnl: 605, since: "2026-09-30" });
+  expect(res.summary).toMatchObject({ trades: 2, wins: 1, losses: 1, winRate: 50, grossPnl: 805, charges: 200, netPnl: 605, since: "2026-09-30", maxDrawdown: 595 });
   expect(res.trades.map((t) => t.netPnl)).toEqual([-595, 1200]); // newest first
   const [second, first] = res.trades;
   expect(first!.bought.map((f) => [f.symbol, f.quantity, f.averagePrice])).toEqual([["OPT CE", 65, 120], ["OPT WING", 65, 20]]);
@@ -256,10 +257,7 @@ test("kill switch needs the bot's table; status works without it", () => {
 
 let server: ReturnType<typeof Bun.serve>;
 let noTable = false;
-const history: HistoryResponse = {
-  summary: { trades: 0, wins: 0, losses: 0, winRate: 0, grossPnl: 0, charges: 0, netPnl: 0 },
-  trades: [],
-};
+const history: HistoryResponse = { summary: buildReport([]), trades: [] };
 const status: StatusResponse = {
   serverTime: "2026-10-01T06:00:00.000Z",
   mode: "paper",

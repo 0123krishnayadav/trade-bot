@@ -117,6 +117,20 @@ export interface MarketData {
   getCandles(instrumentKey: string, timeframe: Timeframe, from: string, to: string): Promise<Candle[]>;
 }
 
+// ---------- Market calendar ----------
+
+/**
+ * A day the F&O market is closed, or open at unusual hours (e.g. a Sunday budget session or
+ * Diwali muhurat trading). Regular weekdays aren't listed.
+ */
+export interface MarketHoliday {
+  /** IST date, YYYY-MM-DD. */
+  date: string;
+  description: string;
+  /** When F&O trades that day; undefined when it's closed all day. */
+  session?: { open: Date; close: Date };
+}
+
 // ---------- Orders and portfolio ----------
 
 /** MIS: intraday. CNC: equity delivery. NRML: carry-forward F&O. MTF: margin trading. */

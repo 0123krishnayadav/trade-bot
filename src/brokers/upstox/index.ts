@@ -1,4 +1,4 @@
-import type { Broker, BrokerLogin, InstrumentLookup, MarketData } from "../../core/types";
+import type { Broker, BrokerLogin, InstrumentLookup, MarketData, MarketHoliday } from "../../core/types";
 import type { Logger } from "../../utils/logger";
 import { exchangeCode, type UpstoxAppCredentials } from "./auth";
 import { waitForLogin } from "./login-server";
@@ -10,6 +10,7 @@ import { UpstoxMarketFeed, type MarketFeedOptions } from "./market-feed";
 import { UpstoxPortfolioFeed } from "./portfolio-feed";
 import { UpstoxMarketData } from "./market-data-adapter";
 import { UpstoxBroker } from "./broker-adapter";
+import { UpstoxCalendarApi } from "./calendar";
 
 /** Upstox's daily browser login: open the link, log in, the local callback saves the token. */
 export function createUpstoxLogin(creds: UpstoxAppCredentials): BrokerLogin {
@@ -48,6 +49,11 @@ export function createUpstoxApi(
     feed: new UpstoxMarketFeed(http, { ...opts.feed, logger: opts.logger?.child("upstox:feed") }),
     portfolioFeed: new UpstoxPortfolioFeed(http, { ...opts.feed, logger: opts.logger?.child("upstox:portfolio") }),
   };
+}
+
+/** This year's market holidays (REST only, no websocket), e.g. for the scheduler. */
+export function fetchUpstoxHolidays(opts: { getAccessToken: () => string | undefined; logger?: Logger }): Promise<MarketHoliday[]> {
+  return new UpstoxCalendarApi(new UpstoxHttp({ ...opts, logger: opts.logger?.child("upstox") })).fetchHolidays();
 }
 
 /** Upstox behind the broker-agnostic MarketData and Broker interfaces. */

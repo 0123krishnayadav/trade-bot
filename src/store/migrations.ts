@@ -122,4 +122,16 @@ export const migrations: Migration[] = [
       PRIMARY KEY (mode, trade_date)
     );`,
   },
+  {
+    id: 6,
+    name: "market holidays",
+    // Closed days and special sessions for F&O, from the broker. No open/close = closed all day.
+    up: `CREATE TABLE market_holidays (
+      date TEXT PRIMARY KEY,
+      description TEXT NOT NULL,
+      open_at TEXT,
+      close_at TEXT,
+      fetched_at TEXT NOT NULL
+    );`,
+  },
 ];

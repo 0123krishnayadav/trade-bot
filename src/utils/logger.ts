@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { formatIst, istDate } from "./time";
 
@@ -88,4 +88,18 @@ export function createLogger(opts: LoggerOptions): Logger {
     error: (message, data) => log("error", message, data),
     child: (module) => createLogger({ ...opts, fileDir: undefined, write, module: opts.module ? `${opts.module}:${module}` : module }),
   };
+}
+
+/** Deletes daily log files (YYYY-MM-DD.log) older than `keepDays`. Returns the deleted names. */
+export function pruneLogs(dir: string, keepDays: number, now: Date = new Date()): string[] {
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return []; // no log folder yet
+  }
+  const cutoff = istDate(new Date(now.getTime() - keepDays * 86_400_000));
+  const old = names.filter((n) => /^\d{4}-\d{2}-\d{2}\.log$/.test(n) && n.slice(0, 10) < cutoff);
+  for (const name of old) rmSync(join(dir, name), { force: true });
+  return old;
 }

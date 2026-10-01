@@ -267,6 +267,7 @@ export class IronButterfly implements Strategy {
       const results = await Promise.all(this.state.legs.filter((l) => l.side === side).map((l) => this.fillLeg(ctx, l, "entry")));
       if (!results.every(Boolean)) {
         ctx.log.error("entry failed, closing the legs that did fill");
+        ctx.notify("⚠️ entry failed, closing the legs that did fill");
         return this.exitTrade(ctx, "ENTRY_FAILED");
       }
     }
@@ -289,6 +290,7 @@ export class IronButterfly implements Strategy {
     });
     const { credit: c, maxProfit: mp, maxLoss, target, stopLoss } = this.state;
     ctx.log.info("entered", { credit: c, maxProfit: mp, maxLoss, target, stopLoss });
+    ctx.notify(`entered ${this.cfg.underlying} ${this.state.atm} (expiry ${this.state.expiry}): credit ${c}, target ₹${target}, stop ₹${stopLoss}`);
   }
 
   /** Buys back the shorts, then sells the wings. Whatever doesn't fill is retried on the next evaluation. */
@@ -304,6 +306,7 @@ export class IronButterfly implements Strategy {
       if (!results.every(Boolean)) {
         const stillOpen = this.state.legs.filter((l) => openQty(l) !== 0 || l.pending?.length).map((l) => l.symbol);
         ctx.log.error("EXIT INCOMPLETE, retrying shortly", { stillOpen });
+        ctx.notify(`⚠️ exit incomplete, retrying: ${stillOpen.join(", ")}`);
         return;
       }
     }
@@ -391,6 +394,7 @@ export class IronButterfly implements Strategy {
       });
     }
     ctx.log.info("exited", { reason: this.state.exitReason, grossPnl: round2(gross), charges: round2(charges), netPnl: round2(gross - charges) });
+    if (legs.length) ctx.notify(`exited (${this.state.exitReason}): net ₹${round2(gross - charges)} (gross ₹${round2(gross)}, charges ₹${round2(charges)})`);
     this.save(ctx, { ...this.state, phase: "done" });
   }
 

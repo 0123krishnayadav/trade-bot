@@ -10,6 +10,8 @@ import { InstrumentStore } from "../src/store/instrument-store";
 import { TradingStore } from "../src/store/trading-store";
 import { createLogger, type LogLevel } from "../src/utils/logger";
 import { istDateTime } from "../src/utils/time";
+import { RiskManager, type RiskLimits } from "../src/risk/risk-manager";
+import type { Notifier } from "../src/alerts/notifier";
 
 export class FakeMarketData implements MarketData {
   private tickHandler?: (t: Tick) => void;
@@ -53,7 +55,9 @@ const INSTRUMENTS: Instrument[] = [
   ...[22300, 22700, 23100].flatMap((s) => [option(s, "CE"), option(s, "PE"), option(s, "CE", "2026-10-13"), option(s, "PE", "2026-10-13")]),
 ];
 
-export function tradingHarness(opts: { mode?: "paper" | "live"; date?: string; logLevel?: LogLevel; db?: ReturnType<typeof openDatabase> } = {}) {
+export function tradingHarness(
+  opts: { mode?: "paper" | "live"; date?: string; logLevel?: LogLevel; db?: ReturnType<typeof openDatabase>; risk?: RiskLimits; notifier?: Notifier } = {},
+) {
   const date = opts.date ?? "2026-10-05";
   let now = istDateTime(date, "09:00");
   const db = opts.db ?? openDatabase(":memory:");
@@ -66,7 +70,21 @@ export function tradingHarness(opts: { mode?: "paper" | "live"; date?: string; l
   const market = new MarketEngine(md, { now: () => now, logger });
   const broker = new PaperBroker(market, instruments, { capital: 500_000, now: () => now });
   const store = new TradingStore(db, opts.mode ?? "paper");
-  const engine = new StrategyEngine({ market, broker, instruments, store, mode: opts.mode ?? "paper", logger, now: () => now, clockIntervalMs: 3_600_000 });
+  // With limits, orders go through the risk manager like in the real bot (checked by hand via risk.check()).
+  const risk = opts.risk
+    ? new RiskManager(broker, { limits: opts.risk, instruments, prices: market, store, logger, notifier: opts.notifier, now: () => now, checkIntervalMs: 3_600_000 })
+    : undefined;
+  const engine = new StrategyEngine({
+    market,
+    broker: risk ?? broker,
+    instruments,
+    store,
+    mode: opts.mode ?? "paper",
+    logger,
+    notifier: opts.notifier,
+    now: () => now,
+    clockIntervalMs: 3_600_000,
+  });
 
   const price = (instrumentKey: string, ltp: number, spread = 0.1) =>
     md.push({ instrumentKey, ltp, time: now, prevClose: 0, bestBid: ltp - spread / 2, bestAsk: ltp + spread / 2 });
@@ -76,6 +94,7 @@ export function tradingHarness(opts: { mode?: "paper" | "live"; date?: string; l
     md,
     market,
     broker,
+    risk,
     store,
     engine,
     instruments,

@@ -48,6 +48,9 @@ export const UPSTOX_ENDPOINTS = {
   historicalCandles: "/v3/historical-candle",
   intradayCandles: "/v3/historical-candle/intraday",
 
+  // Market calendar (the current year)
+  holidays: "/v2/market/holidays",
+
   // Live websockets; each authorize call returns a one-time wss:// URL
   marketFeedAuthorize: "/v3/feed/market-data-feed/authorize",
   /** Order, position, holding and GTT updates (JSON messages). */

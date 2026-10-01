@@ -1,4 +1,4 @@
-import { Alert, Badge, Button, Card, Group, SimpleGrid, Skeleton, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Badge, Button, Card, Grid, Group, SimpleGrid, Skeleton, Stack, Table, Text, Title } from "@mantine/core";
 import { useLocation } from "wouter";
 import { useCallback, useEffect, useState } from "react";
 import type { HistoryResponse, TradeFill } from "../../api/types";
@@ -70,6 +70,16 @@ export function HistoryPage({ mode, onLoggedOut }: { mode: "paper" | "live"; onL
         ) : (
           <>
             <Summary data={data} />
+            {data.summary.trades > 0 && (
+              <Grid>
+                <Grid.Col span={{ base: 12, md: 5 }}>
+                  <ExitReasons data={data} />
+                </Grid.Col>
+                <Grid.Col span={{ base: 12, md: 7 }}>
+                  <DailyPnl data={data} />
+                </Grid.Col>
+              </Grid>
+            )}
             <TradesTable data={data} />
           </>
         )}
@@ -99,12 +109,89 @@ function Stat({ label, value, color, hint }: { label: string; value: string; col
 function Summary({ data }: { data: HistoryResponse }) {
   const s = data.summary;
   return (
-    <SimpleGrid cols={{ base: 2, md: 4 }}>
-      <Stat label="Net P&L" value={inr(s.netPnl)} color={pnlColor(s.netPnl)} hint={s.since && `since ${s.since}`} />
-      <Stat label="Gross P&L" value={inr(s.grossPnl)} color={pnlColor(s.grossPnl)} />
-      <Stat label="Charges" value={inr(s.charges)} />
-      <Stat label="Trades" value={String(s.trades)} hint={s.trades ? `${s.wins} won · ${s.losses} lost · ${s.winRate}% win rate` : undefined} />
-    </SimpleGrid>
+    <>
+      <SimpleGrid cols={{ base: 2, md: 4 }}>
+        <Stat label="Net P&L" value={inr(s.netPnl)} color={pnlColor(s.netPnl)} hint={s.since && `since ${s.since}`} />
+        <Stat label="Gross P&L" value={inr(s.grossPnl)} color={pnlColor(s.grossPnl)} />
+        <Stat label="Charges" value={inr(s.charges)} />
+        <Stat label="Trades" value={String(s.trades)} hint={s.trades ? `${s.wins} won · ${s.losses} lost · ${s.winRate}% win rate` : undefined} />
+      </SimpleGrid>
+      {s.trades > 0 && (
+        <SimpleGrid cols={{ base: 2, md: 4 }}>
+          <Stat label="Expectancy" value={inr(s.expectancy)} color={pnlColor(s.expectancy)} hint="per trade, after costs" />
+          <Stat label="Avg win / loss" value={`${inr(s.avgWin)} / ${inr(s.avgLoss)}`} />
+          <Stat label="Max drawdown" value={inr(s.maxDrawdown)} color={s.maxDrawdown > 0 ? "red" : undefined} hint="from a previous high" />
+          <Stat
+            label="Profit factor"
+            value={s.profitFactor === undefined ? "—" : String(s.profitFactor)}
+            hint={`best ${inr(s.bestTrade)} · worst ${inr(s.worstTrade)}`}
+          />
+        </SimpleGrid>
+      )}
+    </>
+  );
+}
+
+function ExitReasons({ data }: { data: HistoryResponse }) {
+  return (
+    <Card withBorder h="100%">
+      <Text fw={600} mb="xs">
+        Exit reasons
+      </Text>
+      <Table className="num" verticalSpacing={6}>
+        <Table.Tbody>
+          {data.summary.exitReasons.map((e) => (
+            <Table.Tr key={e.reason}>
+              <Table.Td>
+                <Badge size="sm" variant="light" color={EXIT_COLOR[e.reason] ?? "gray"}>
+                  {e.reason.replace(/_/g, " ")}
+                </Badge>
+              </Table.Td>
+              <Table.Td ta="right">{e.trades}</Table.Td>
+              <Table.Td ta="right" c={pnlColor(e.netPnl)}>
+                {inr(e.netPnl)}
+              </Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Card>
+  );
+}
+
+function DailyPnl({ data }: { data: HistoryResponse }) {
+  return (
+    <Card withBorder h="100%">
+      <Text fw={600} mb="xs">
+        Per day
+      </Text>
+      <Table.ScrollContainer minWidth={360} mah={260}>
+        <Table className="num" verticalSpacing={6} stickyHeader>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Date</Table.Th>
+              <Table.Th ta="right">Trades</Table.Th>
+              <Table.Th ta="right">Net P&L</Table.Th>
+              <Table.Th ta="right">Running total</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {[...data.summary.daily].reverse().map((d) => (
+              <Table.Tr key={d.date}>
+                <Table.Td>{d.date}</Table.Td>
+                <Table.Td ta="right">{d.trades}</Table.Td>
+                <Table.Td ta="right" c={pnlColor(d.netPnl)}>
+                  {inr(d.netPnl)}
+                </Table.Td>
+                <Table.Td ta="right" c={pnlColor(d.cumulative)}>
+                  {inr(d.cumulative)}
+                </Table.Td>
+              </Table.Tr>
+            ))}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </Card>
   );
 }
 

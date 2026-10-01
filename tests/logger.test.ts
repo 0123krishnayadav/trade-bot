@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { createLogger, type LogLevel } from "../src/utils/logger";
+import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createLogger, pruneLogs, type LogLevel } from "../src/utils/logger";
 
 function capture(opts: { level?: LogLevel; format?: "pretty" | "json" } = {}) {
   const lines: { line: string; level: LogLevel }[] = [];
@@ -78,4 +81,12 @@ test("writes to a file per IST day, from the root logger and its children", asyn
   );
   expect(readFileSync(join(dir, "logs", "2026-10-01.log"), "utf8")).toBe("2026-10-01 00:01:00 INFO  after midnight\n");
   rmSync(dir, { recursive: true });
+});
+
+test("pruneLogs deletes only dated log files older than the retention", () => {
+  const dir = mkdtempSync(join(tmpdir(), "trade-bot-logs-"));
+  for (const name of ["2026-08-31.log", "2026-09-01.log", "2026-09-30.log", "notes.txt", "2026-01-01.txt"]) writeFileSync(join(dir, name), "x");
+  expect(pruneLogs(dir, 30, new Date("2026-10-01T06:00:00Z"))).toEqual(["2026-08-31.log"]);
+  expect(readdirSync(dir).sort()).toEqual(["2026-01-01.txt", "2026-09-01.log", "2026-09-30.log", "notes.txt"]);
+  expect(pruneLogs(join(dir, "missing"), 30)).toEqual([]);
 });
